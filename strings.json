@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "search": {
+        "title": "Load Shedding",
+        "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown.",
+        "data": {
+          "province": "Province",
+          "search": "Search",
+          "suburb": "Suburb",
+          "suburb_id": "Suburb ID"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured",
+            "cannot_connect": "Failed to connect"
+        },
+        "error": {
+            "cannot_connect": "Failed to connect"
+        },
+        "step": {
+            "search": {
+                "data": {
+                    "province": "Province",
+                    "search": "Search",
+                    "suburb": "Suburb",
+                    "suburb_id": "Suburb ID"
+                },
+                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown.",
+                "title": "Load Shedding"
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "search": {
+                "data": {
+                    "province": "Province",
+                    "search": "Search",
+                    "suburb": "Suburb",
+                    "suburb_id": "Suburb ID"
+                },
+                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown.",
+                "title": "Load Shedding"
+            }
+        }
+    }
+}
