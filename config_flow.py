@@ -29,6 +29,7 @@ def find_suburbs(suburb: str) -> str | None:
         return suburbs
 
 
+@config_entries.HANDLERS.register(DOMAIN)
 class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for LoadShedding."""
 
@@ -77,11 +78,6 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         {
                             vol.Required(CONF_SUBURB, default=search): str,
                             vol.Optional(CONF_SUBURB_ID): vol.In(suburb_ids),
-                            vol.Optional("municipality"): str,
-                            vol.Optional("province"): str,
-                            vol.Optional("province_id"): str,
-                            # vol.Optional("name"): str,
-                            # vol.Optional("id"): str,
                         }
                     )
                 return self.async_show_form(

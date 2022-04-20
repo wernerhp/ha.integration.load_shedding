@@ -27,7 +27,9 @@ CONF_SUBURB_ID = "suburb_id"
 ATTR_NEXT_START = "next_start"
 ATTR_NEXT_END = "next_end"
 ATTR_SUBURBS = "suburbs"
+ATTR_LAST_UPDATE = "last_update"
+ATTR_TIME_UNTIL = "time_until"
 
 PROVIDER = eskom.Eskom
 
-DEFAULT_SCAN_INTERVAL = 900  # seconds
+DEFAULT_SCAN_INTERVAL = 1800  # seconds

@@ -2,9 +2,9 @@
   "domain": "load_shedding",
   "name": "Load Shedding",
   "documentation": "https://www.home-assistant.io/integrations/load_shedding/",
-  "requirements": ["load-shedding==0.3.1"],
+  "requirements": ["load-shedding==0.4.0"],
   "codeowners": ["@wernerhp"],
+  "version": "0.0.1",
   "config_flow": true,
-  "quality_scale": "platinum",
-  "iot_class": "local_polling"
+  "iot_class": "cloud_polling"
 }
