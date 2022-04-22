@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, cast
 
 from load_shedding.providers import Suburb
@@ -30,6 +30,7 @@ from .const import (
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_SUBURBS,
+    ATTR_TIME_UNTIL,
     ATTRIBUTION,
     DOMAIN,
     NAME,
@@ -120,17 +121,30 @@ class LoadSheddingSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
         suburbs = self.coordinator.data.get(ATTR_SUBURBS, {})
         schedule = suburbs.get(self.suburb.id, {})
 
-        forecast = datetime.now().date() + timedelta(days=7)
+        if not schedule:
+            return self._attrs
+
+        tz = timezone.utc
+        now = datetime.now(tz)
+        days = 7
+        forecast = []
+        for s in schedule:
+            start = datetime.fromisoformat(s[0])
+            end = datetime.fromisoformat(s[1])
+            if start.date() > now.date() + timedelta(days=days):
+                continue
+            if end < now:
+                continue
+            forecast.append({"start": start.isoformat(), "end": end.isoformat()})
+
+        # time_until = datetime.fromisoformat(forecast[0].get("start")) - now
 
         self._attrs.update(
             {
-                ATTR_NEXT_START: schedule[0][0],
-                ATTR_NEXT_END: schedule[0][1],
-                ATTR_SCHEDULE: [
-                    {"start": s[0], "end": s[1]}
-                    for s in schedule
-                    if datetime.strptime(s[0], "%Y-%m-%d %H:%M").date() <= forecast
-                ],
+                ATTR_NEXT_START: forecast[0].get("start"),
+                ATTR_NEXT_END: forecast[0].get("end"),
+                # ATTR_TIME_UNTIL: time_until,
+                ATTR_SCHEDULE: forecast,
             }
         )
 

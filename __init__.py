@@ -20,6 +20,11 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
 
 
+async def async_setup(hass: HomeAssistant, config: Config):
+    """Set up this integration using YAML is not supported."""
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
 
@@ -40,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _schedule_updates(*_):
         """Activate the data update coordinator."""
         coordinator.update_interval = timedelta(
-            minutes=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         )
         await coordinator.async_refresh()
 
