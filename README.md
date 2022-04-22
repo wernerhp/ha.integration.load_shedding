@@ -3,13 +3,22 @@
 A Home Assistant integration to track your load schedding schedule.
 
 # Manual Install
-1. Download and unzip to your Home Assistant `config/custom_components` folder.  
+1. Download and unzip to your Home Assistant `config/custom_components` folder.
+  <details>
+  <summary>Screenshot</summary>
+  
 ![image](https://user-images.githubusercontent.com/2578772/164681660-57d56fc4-4713-4be5-9ef1-bf2f7cf96b64.png)
-3. Restart Home Assistant.
-4. Go to Settings > Devices & Services > + Add Integration
-5. Search for 'Load Shedding' and follow the config flow.
-6. If you're coming from a previous version of this integration, you may need to delete the `.json` files in `/config/.cache`.  
+  </details>
+  
+2. Restart Home Assistant.
+3. Go to Settings > Devices & Services > + Add Integration
+4. Search for 'Load Shedding' and follow the config flow.
+5. If you're coming from a previous version of this integration, you may need to delete the `.json` files in `/config/.cache`.
+<details>
+  <summary>Screenshot</summary>
+  
 ![image](https://user-images.githubusercontent.com/2578772/164681929-e3afc6ea-5821-4ac5-8fa8-eee04c819eb6.png)
+  </details>
 
 # To Do:
 1. Add to HACS for HACS install
@@ -17,7 +26,11 @@ A Home Assistant integration to track your load schedding schedule.
 
 # Cards
 I created this card with the help of [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row)  
+<details>
+  <summary>Screenshot</summary>
+  
 ![image](https://user-images.githubusercontent.com/2578772/164682124-ef4d02c0-a041-4295-860e-429f85f4265f.png)
+  </details>
 <details>
   <summary>Code</summary>
   
@@ -87,8 +100,7 @@ mode: single
 ```
   </details>
   
-### 15 minutes warning before load shedding starts.
-This sends a telegram message, announces on speakers and updates my slack status.
+### 15 minutes warning on speaker and telegram before load shedding starts.
 <details>
   <summary>Code</summary>
   
@@ -120,24 +132,19 @@ action:
       entity_id: media_player.assistant_speakers
       message: Load Shedding starts in 15 minutes.
       cache: true
-  - delay:
-      hours: 0
-      minutes: 15
-      seconds: 0
-      milliseconds: 0
-  - service: rest_command.slack_status
-    data:
-      emoji: ':loadsheddingtransparent:'
-      status: >-
-        Load Shedding until {{
-        (state_attr('sensor.load_shedding_milnerton','next_end') | as_datetime |
-        as_local).strftime('%H:%M (%Z)') }}
 mode: single
 ```
 </details>
 
+    
+### Dim lights or turn off devices before load shedding and turn them back on afterwards.
+
+### Update your Slack status
+
 <details>
-  <summary>Slack Code</summary>
+  <summary>Code</summary>
+  
+  [rest_command](https://www.home-assistant.io/integrations/rest_command/)
   
 ```yaml
 slack_status:
@@ -151,5 +158,30 @@ slack_status:
   verify_ssl: true
 ```
 </details>
-    
-### Dim lights or turn off devices before load shedding and turn them back on afterwards.
+
+<details>
+  <summary>Code</summary>
+  
+```yaml
+alias: Load Shedding (Start)
+description: ''
+trigger:
+  - platform: template
+    value_template: >-
+      {{ state_attr('sensor.load_shedding_milnerton', 'next_start') |
+      as_datetime - now().strftime('%Y-%m-%d %H:%M%z') | as_datetime ==
+      timedelta(minutes=0) }}
+condition: []
+action:
+  - service: rest_command.slack_status
+    data:
+      service: rest_command.slack_status
+      data:
+        emoji: ':loadsheddingtransparent:'
+        status: >-
+          Load Shedding until {{
+          (state_attr('sensor.load_shedding_milnerton','next_end') | as_datetime
+          | as_local).strftime('%H:%M (%Z)') }}
+mode: single
+```
+</details>
