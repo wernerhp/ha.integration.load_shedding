@@ -144,6 +144,11 @@ mode: single
 <details>
   <summary>Code</summary>
   
+`secrets.yaml`
+```yaml
+slack_token: Bearer xoxp-XXXXXXXXXX-XXXXXXXXXXXX-XXXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```  
+  
   [rest_command](https://www.home-assistant.io/integrations/rest_command/)
   
 ```yaml
@@ -151,7 +156,7 @@ slack_status:
   url: https://slack.com/api/users.profile.set
   method: POST
   headers:
-    authorization: Bearer !secret slack_token
+    authorization: !secret slack_token
     accept: "application/json, text/html"
   payload: '{"profile":{"status_text": "{{ status }}","status_emoji": "{{ emoji }}"}}'
   content_type: "application/json; charset=utf-8"
