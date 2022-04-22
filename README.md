@@ -87,7 +87,8 @@ mode: single
 ```
   </details>
   
-### Give a last rounds call for coffee 15 minutes before load shedding starts.
+### 15 minutes warning before load shedding starts.
+This sends a telegram message, announces on speakers and updates my slack status.
 <details>
   <summary>Code</summary>
   
@@ -113,15 +114,42 @@ action:
     data:
       volume_level: 0.7
     target:
-      device_id: YOUR_SPEAKER_DEVICE_ID
+      device_id: SPEAKER_DEVICE_ID
   - service: tts.home_assistant_say
     data:
       entity_id: media_player.assistant_speakers
       message: Load Shedding starts in 15 minutes.
       cache: true
+  - delay:
+      hours: 0
+      minutes: 15
+      seconds: 0
+      milliseconds: 0
+  - service: rest_command.slack_status
+    data:
+      emoji: ':loadsheddingtransparent:'
+      status: >-
+        Load Shedding until {{
+        (state_attr('sensor.load_shedding_milnerton','next_end') | as_datetime |
+        as_local).strftime('%H:%M (%Z)') }}
 mode: single
+```
+</details>
+
+<details>
+  <summary>Slack Code</summary>
+  
+```yaml
+slack_status:
+  url: https://slack.com/api/users.profile.set
+  method: POST
+  headers:
+    authorization: Bearer !secret slack_token
+    accept: "application/json, text/html"
+  payload: '{"profile":{"status_text": "{{ status }}","status_emoji": "{{ emoji }}"}}'
+  content_type: "application/json; charset=utf-8"
+  verify_ssl: true
 ```
 </details>
     
 ### Dim lights or turn off devices before load shedding and turn them back on afterwards.
-
