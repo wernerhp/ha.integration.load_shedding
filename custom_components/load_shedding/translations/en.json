@@ -15,8 +15,7 @@
                     "suburb": "Suburb",
                     "suburb_id": "Suburb ID"
                 },
-                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown.",
-                "title": "Load Shedding"
+                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown."
             }
         }
     },
@@ -29,8 +28,7 @@
                     "suburb": "Suburb",
                     "suburb_id": "Suburb ID"
                 },
-                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown.",
-                "title": "Load Shedding"
+                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown."
             }
         }
     }

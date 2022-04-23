@@ -2,7 +2,6 @@
   "config": {
     "step": {
       "search": {
-        "title": "Load Shedding",
         "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown.",
         "data": {
           "province": "Province",

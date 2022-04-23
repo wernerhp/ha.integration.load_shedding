@@ -2,6 +2,16 @@
 
 A Home Assistant integration to track your load schedding schedule.
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+
+<a href="https://www.buymeacoffee.com/wernerhp" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
+
+
+# HACS
+1. Go to HACS Integrations on your Home Assitant instance and search for "Load Shedding"
+2. Download this repository with HACS
+3. [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=load_shedding)
+
 # Manual Install
 1. Download and unzip to your Home Assistant `config/custom_components` folder.
   <details>
@@ -11,7 +21,7 @@ A Home Assistant integration to track your load schedding schedule.
   </details>
   
 2. Restart Home Assistant.
-3. Go to Settings > Devices & Services > + Add Integration
+3. Go to Settings > Devices & Services > + Add Integration (or click [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=load_shedding))
 4. Search for 'Load Shedding' and follow the config flow.
 5. If you're coming from a previous version of this integration, you may need to delete the `.json` files in `/config/.cache`.
 <details>
@@ -21,8 +31,7 @@ A Home Assistant integration to track your load schedding schedule.
   </details>
 
 # To Do:
-1. Add to HACS for HACS install
-2. Add time until attribute
+1. Add time until attribute
 
 # Cards
 I created this card with the help of [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row)  
