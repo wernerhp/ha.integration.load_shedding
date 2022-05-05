@@ -1,5 +1,5 @@
 {
-  "domain": "eskom_loadshedding",
+  "domain": "load_shedding",
   "name": "Load Shedding",
   "documentation": "https://www.home-assistant.io/integrations/load_shedding/",
   "issue_tracker": "https://github.com/wernerhp/ha_integration_load_shedding/issues",
