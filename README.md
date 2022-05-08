@@ -8,9 +8,13 @@ A Home Assistant integration to track your load schedding schedule.
 
 
 # HACS
-1. Go to HACS Integrations on your Home Assitant instance and search for "Load Shedding"
-2. Download this repository with HACS
-3. [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=load_shedding)
+1. Go to HACS Integrations on your Home Assitant instance
+2. Select "+ Explore & Download Repositories" and search for "Load Shedding"
+3. Select "Load Shedding" and "Download this repository with HACS"
+![image](https://user-images.githubusercontent.com/2578772/167293308-d3ef2131-bc71-431e-a1ff-6e02f02af000.png)
+4. Once downloaded, click the "My Integrations" button to configure the integration.  
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=load_shedding)
+5. Setup cards and automations
 
 # Manual Install
 1. Download and unzip to your Home Assistant `config/custom_components` folder.
