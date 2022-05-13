@@ -41,8 +41,16 @@ A Home Assistant integration to track your load schedding schedule.
 </details>
 
 # Sensor
+The load shedding sensor State will always reflect the current load shedding stage.  
+i.e When load shedding is suspended, it will show **No Load Shedding**.  When Stage 2 is active, it will show **Stage 2**.  
+> Since the schedules differ depending on the Stage, the `next_start`, `next_end` and `schedule` times only show once there is an active Stage as it needs to know which stage to query.  
+
+When load shedding ends the last state's schedule will remain in the sensor's Attributes until your restart Home Assistant.
 <details>
   <summary>Screenshot</summary>
+
+![image](https://user-images.githubusercontent.com/2578772/168296185-af97139a-6170-4273-8414-18a2f9d140c2.png)
+  
 ![image](https://user-images.githubusercontent.com/2578772/168240243-27c7fd3b-d7e2-4918-a74d-97b13155aa90.png)
   </details>
 
@@ -87,7 +95,35 @@ show_header_toggle: false
   </details>
 
 # Automation Ideas
-These are just some automations I've got set up.  They are not perfect and will require some tweaking on your end.  Feel free to contribute your automations ideas and custom panels by poting them on [this Issue thread](https://github.com/wernerhp/ha_integration_load_shedding/issues/5)
+These are just some automations I've got set up.  They are not perfect and will require some tweaking on your end.  Feel free to contribute your automations ideas and custom panels by posting them on [this Issue thread](https://github.com/wernerhp/ha_integration_load_shedding/issues/5)
+
+In order to clean up some of the automation code, you can define a [template sensors](https://www.home-assistant.io/integrations/template) for "Next Start" and "Next End" and reference them in automations instead.
+<details>
+  <summary>Code</summary>
+  
+  ```
+- platform: template
+  sensors:
+    load_shedding_next_start:
+      friendly_name: "Next Start"
+      value_template: >-
+        {% if state_attr('sensor.load_shedding_milnerton', 'next_start') != None %}
+          {{ state_attr("sensor.load_shedding_milnerton", "next_start") | as_datetime - now().strftime("%Y-%m-%d %H:%M%z") | as_datetime }}
+        {% else %}
+          Unknown
+        {% endif %}
+    load_shedding_next_end:
+      friendly_name: "Next End"
+      value_template: >-
+        {% if state_attr('sensor.load_shedding_milnerton', 'next_start') != None %}
+          {{ state_attr("sensor.load_shedding_milnerton", "next_start") | as_datetime - now().strftime("%Y-%m-%d %H:%M%z") | as_datetime }}
+        {% else %}
+          Unknown
+        {% endif %}
+
+  ```
+  </details>
+
 ### Announce Load Shedding stage changes on speakers and push notifications.
 <details>
   <summary>Code</summary>
