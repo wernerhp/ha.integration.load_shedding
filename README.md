@@ -2,12 +2,12 @@
 
 A Home Assistant integration to track your load schedding schedule.
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 
-<a href="https://www.buymeacoffee.com/wernerhp" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
-
+> ℹ️ **_NOTE:_**  This integration makes use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
+> If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
 
 # HACS
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 1. Go to HACS Integrations on your Home Assitant instance
 2. Select "+ Explore & Download Repositories" and search for "Load Shedding"
 3. Select "Load Shedding" and "Download this repository with HACS"
@@ -16,7 +16,12 @@ A Home Assistant integration to track your load schedding schedule.
 [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=load_shedding)
 5. Setup cards and automations
 
+<a href="https://www.buymeacoffee.com/wernerhp" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
+
 # Manual Install
+<details>
+<summary>Expand</summary>
+
 1. Download and unzip to your Home Assistant `config/custom_components` folder.
   <details>
   <summary>Screenshot</summary>
@@ -33,16 +38,21 @@ A Home Assistant integration to track your load schedding schedule.
   
 ![image](https://user-images.githubusercontent.com/2578772/164681929-e3afc6ea-5821-4ac5-8fa8-eee04c819eb6.png)
   </details>
+</details>
 
-# To Do:
-1. Add time until attribute
+# Sensor
+<details>
+  <summary>Screenshot</summary>
+![image](https://user-images.githubusercontent.com/2578772/168240243-27c7fd3b-d7e2-4918-a74d-97b13155aa90.png)
+  </details>
 
 # Cards
 I created this card with the help of [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row)  
 <details>
   <summary>Screenshot</summary>
-  
-![image](https://user-images.githubusercontent.com/2578772/164682124-ef4d02c0-a041-4295-860e-429f85f4265f.png)
+ 
+![image](https://user-images.githubusercontent.com/2578772/168237722-9ce09b94-310c-4f08-bcc1-40a7ffe257b0.png)
+
   </details>
 <details>
   <summary>Code</summary>
@@ -50,33 +60,40 @@ I created this card with the help of [template-entity-row](https://github.com/th
 ```yaml
 type: entities
 entities:
-  - entity: sensor.load_shedding_milnerton
+  - type: custom:template-entity-row
+    icon: mdi:lightning-bolt-outline
+    name: Milnerton
+    state: '{{states(''sensor.load_shedding_milnerton'')}}'
+    active: '{{ not is_state(''sensor.load_shedding_milnerton'', ''No Load Shedding'') }}'
   - type: custom:template-entity-row
     icon: mdi:timer-outline
-    name: Next Start
+    name: Next
     state: >-
       {{ state_attr('sensor.load_shedding_milnerton', 'next_start') |
-      as_datetime | as_local }}
+      as_timestamp | timestamp_custom("%H:%M") }} - {{
+      state_attr('sensor.load_shedding_milnerton', 'next_end' ) | as_timestamp |
+      timestamp_custom("%H:%M") }}
+    condition: '{{ not is_state(''sensor.load_shedding_milnerton'', ''No Load Shedding'') }}'
   - type: custom:template-entity-row
     icon: mdi:timer-sand
     name: Time Until
     state: >-
-      {{ state_attr('sensor.load_shedding_milnerton', 'next_start') |
-      as_datetime - now().strftime('%Y-%m-%d %H:%M%z') | as_datetime }}
-  - entity: automation.load_shedding_last_rounds
-    name: 15min Warning
-    icon: mdi:bullhorn-outline
+      {{ (state_attr('sensor.load_shedding_milnerton', 'next_start') |
+      as_timestamp - now().strftime('%Y-%m-%d %H:%M%z') | as_timestamp)|
+      timestamp_custom("%Hh%M", False) }}
+    condition: '{{ not is_state(''sensor.load_shedding_milnerton'', ''No Load Shedding'') and state_attr(''sensor.load_shedding_milnerton'', ''next_start'') != None }}'
+show_header_toggle: false
 ```
   </details>
 
 # Automation Ideas
-
+These are just some automations I've got set up.  They are not perfect and will require some tweaking on your end.  Feel free to contribute your automations ideas and custom panels by poting them on [this Issue thread](https://github.com/wernerhp/ha_integration_load_shedding/issues/5)
 ### Announce Load Shedding stage changes on speakers and push notifications.
 <details>
   <summary>Code</summary>
   
 ```yaml
-alias: Load Shedding
+alias: Load Shedding (Stage)
 description: ''
 trigger:
   - platform: template
@@ -97,7 +114,7 @@ action:
                 at: input_datetime.wake
             continue_on_timeout: false
     default: []
-  - service: notify.mobile_app_YOUR_PHONE
+  - service: notify.mobile_app_nokia_8_sirocco
     data:
       title: Load Shedding
       message: '{{ states.sensor.load_shedding_milnerton.state }}'
@@ -127,9 +144,19 @@ trigger:
       as_datetime - now().strftime('%Y-%m-%d %H:%M%z') | as_datetime ==
       timedelta(minutes=15) }}
 condition:
-  - condition: time
-    after: input_datetime.alarm
-    before: input_datetime.sleep
+  - condition: and
+    conditions:
+      - condition: time
+        after: input_datetime.alarm
+        before: input_datetime.sleep
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: sensor.load_shedding_milnerton
+            state: Unknown
+          - condition: state
+            entity_id: sensor.load_shedding_milnerton
+            state: No Load Shedding
 action:
   - service: telegram_bot.send_message
     data:
@@ -139,7 +166,7 @@ action:
     data:
       volume_level: 0.7
     target:
-      device_id: SPEAKER_DEVICE_ID
+      entity_id: media_player.assistant_speakers
   - service: tts.home_assistant_say
     data:
       entity_id: media_player.assistant_speakers
@@ -153,6 +180,8 @@ mode: single
 ### Dim lights or turn off devices before load shedding and turn them back on afterwards.
 
 ### Update your Slack status
+
+Setup a REST Command and two automations to set your Slack status when Load Shedding starts and ends.
 
 <details>
   <summary>Code</summary>
@@ -189,17 +218,54 @@ trigger:
       {{ state_attr('sensor.load_shedding_milnerton', 'next_start') |
       as_datetime - now().strftime('%Y-%m-%d %H:%M%z') | as_datetime ==
       timedelta(minutes=0) }}
-condition: []
+condition:
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: sensor.load_shedding_milnerton
+        state: Unknown
+      - condition: state
+        entity_id: sensor.load_shedding_milnerton
+        state: No Load Shedding
 action:
   - service: rest_command.slack_status
     data:
-      service: rest_command.slack_status
-      data:
-        emoji: ':loadsheddingtransparent:'
-        status: >-
-          Load Shedding until {{
-          (state_attr('sensor.load_shedding_milnerton','next_end') | as_datetime
-          | as_local).strftime('%H:%M (%Z)') }}
+      emoji: ':loadsheddingtransparent:'
+      status: >-
+        Load Shedding until {{
+        (state_attr('sensor.load_shedding_milnerton','next_end') | as_datetime |
+        as_local).strftime('%H:%M (%Z)') }}
 mode: single
+```
+</details>
+
+<details>
+  <summary>Code</summary>
+  
+```yaml
+alias: Load Shedding (End)
+description: ''
+trigger:
+  - platform: template
+    value_template: >-
+      {{ state_attr('sensor.load_shedding_milnerton', 'next_end') | as_datetime
+      - now().strftime('%Y-%m-%d %H:%M%z') | as_datetime == timedelta(minutes=0)
+      }}
+condition:
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: sensor.load_shedding_milnerton
+        state: Unknown
+      - condition: state
+        entity_id: sensor.load_shedding_milnerton
+        state: No Load Shedding
+action:
+  - service: rest_command.slack_status
+    data:
+      emoji: ':speech_balloon:'
+      status: is typing...
+mode: single
+
 ```
 </details>
