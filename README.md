@@ -87,7 +87,7 @@ entities:
     name: Time Until
     state: >-
       {{ (state_attr('sensor.load_shedding_milnerton', 'next_start') |
-      as_timestamp - now().strftime('%Y-%m-%d %H:%M%z') | as_timestamp)|
+      as_timestamp - now().strftime('%Y-%m-%d %H:%M%z') | as_timestamp) |
       timestamp_custom("%Hh%M", False) }}
     condition: '{{ not is_state(''sensor.load_shedding_milnerton'', ''No Load Shedding'') and state_attr(''sensor.load_shedding_milnerton'', ''next_start'') != None }}'
 show_header_toggle: false
