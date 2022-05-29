@@ -5,31 +5,28 @@ from typing import Final
 
 from load_shedding.providers import eskom
 
-API_IMPERIAL: Final = "Imperial"
-API_METRIC: Final = "Metric"
 ATTRIBUTION: Final = "Data provided by Eskom"
+DEFAULT_SCAN_INTERVAL = 60  # seconds
 DOMAIN: Final = "load_shedding"
 MANUFACTURER: Final = "Eskom"
-MAX_FORECAST_DAYS: Final = 4
+MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
-CONF_SCHEDULE: Final = "schedule"
-
-ATTR_SCHEDULE: Final = "schedule"
-ATTR_STAGE: Final = "state"
-CONF_MUNICIPALITY = "municipality"
-CONF_OPTIONS = "options"
-CONF_PROVINCE = "province"
-CONF_PROVINCE_ID = "province_id"
-CONF_PROVIDER = "provider"
-CONF_SUBURB = "suburb"
-CONF_SUBURBS = "suburbs"
-CONF_SUBURB_ID = "suburb_id"
-ATTR_NEXT_START = "next_start"
-ATTR_NEXT_END = "next_end"
-ATTR_SUBURBS = "suburbs"
-ATTR_LAST_UPDATE = "last_update"
-ATTR_TIME_UNTIL = "time_until"
-
 PROVIDER = eskom.Eskom
 
-DEFAULT_SCAN_INTERVAL = 1800  # seconds
+CONF_MUNICIPALITY: Final = "municipality"
+CONF_OPTIONS: Final = "options"
+CONF_PROVIDER: Final = "provider"
+CONF_PROVINCE: Final = "province"
+CONF_PROVINCE_ID: Final = "province_id"
+CONF_SCHEDULE: Final = "schedule"
+CONF_SUBURB: Final = "suburb"
+CONF_SUBURBS: Final = "suburbs"
+CONF_SUBURB_ID: Final = "suburb_id"
+
+ATTR_LAST_UPDATE: Final = "last_update"
+ATTR_NEXT_END: Final = "next_end"
+ATTR_NEXT_START: Final = "next_start"
+ATTR_SCHEDULE: Final = "schedule"
+ATTR_STAGE: Final = "state"
+ATTR_SUBURBS:  Final = "suburbs"
+ATTR_TIME_UNTIL: Final = "time_until"
