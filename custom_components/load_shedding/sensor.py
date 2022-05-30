@@ -16,6 +16,7 @@ from homeassistant.const import (
     ATTR_MANUFACTURER,
     ATTR_MODEL,
     ATTR_NAME,
+    ATTR_VIA_DEVICE,
     STATE_ON,
     STATE_OFF,
 )
@@ -107,7 +108,7 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
             ATTR_NAME: f"{NAME}",
             ATTR_MANUFACTURER: self.coordinator.provider.__class__.__name__,
             ATTR_MODEL: "API",
-            "via_device": (DOMAIN, self._device_id),
+            ATTR_VIA_DEVICE: (DOMAIN, self._device_id),
         }
 
     @property
@@ -149,11 +150,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         self._attr_unique_id = description.key
         self.schedule = []
 
-        # stage = self.coordinator.data.get(ATTR_STAGE)
-
         schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        # stages = schedules.get(self.suburb.id, {})
-
         schedule = schedules.get(self.suburb.id, {})
 
         if not schedule:
@@ -162,16 +159,9 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         tz = timezone.utc
         now = datetime.now(tz)
         days = MAX_FORECAST_DAYS
-        starts_in = None
         for s in schedule:
             starts_at = datetime.fromisoformat(s[0])
             ends_at = datetime.fromisoformat(s[1])
-
-            # if starts_in is None or starts_in.total_seconds() > 0:
-            #     starts_in = starts_at - now
-            #     starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
-            #     ends_in = ends_at - now
-            #     ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
 
             if starts_at.date() > now.date() + timedelta(days=days):
                 continue
@@ -180,60 +170,11 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             self.schedule.append({
                 ATTR_START_TIME: str(starts_at.isoformat()),
                 ATTR_END_TIME: str(ends_at.isoformat()),
-                # "start_in": str(starts_in),
-                # "end_in": str(ends_in),
             })
-
-        # next_start = self.schedule[0].get("start")
-        # next_end = self.schedule[0].get("end")
-
-        # tNow = now().strftime("%Y-%m-%d %H:%M:%S%z") | as_datetime
-        # starts_at = strptime(next_start, "%Y-%m-%dT%H:%M:%S%z") | as_local
-        # ends_at = strptime(next_end, "%Y-%m-%dT%H:%M:%S%z") | as_local
-        # starts_in = starts_at - tNow
-        # ends_in = ends_at - tNow
-
-        # time_until = datetime.fromisoformat(self.schedule[0].get("start")) - now
 
     @property
     def native_value(self) -> StateType:
         """Return the schedule state."""
-
-        # State: {{states('sensor.load_shedding_milnerton')}}
-        #
-        # {% set next_start = state_attr("sensor.load_shedding_milnerton", "next_start") -%}
-        # {% set next_end = state_attr("sensor.load_shedding_milnerton", "next_end") -%}
-        # StartsAt: {{ next_start }} (String UTC)
-        # EndsAt  : {{ next_end }} (String UTC)
-        #
-        # {% set tNow = now().strftime("%Y-%m-%d %H:%M:%S%z") | as_datetime -%}
-        #
-        # {% if next_start == None or next_end == None %}
-        #   Schedule is unavailable
-        # {% else %}
-        #   {% set starts_at = strptime(next_start, "%Y-%m-%dT%H:%M:%S%z") | as_local -%}
-        #   {% set ends_at = strptime(next_end, "%Y-%m-%dT%H:%M:%S%z") | as_local -%}
-        #   StartsAt: {{ starts_at }} (DateTime Local)
-        #   EndsAt  : {{ ends_at }} (DateTime Local)
-        #
-        #   {% set starts_in = starts_at - tNow -%}
-        #   {% set ends_in = ends_at - tNow -%}
-        #
-        #   StartsIn: {{ starts_in }} (TimeDelta)
-        #   EndsIn  : {{ ends_in }} (TimeDelta)
-        #
-        #   ---
-        #   Schedule:
-        #   {{ starts_at.strftime("%H:%M") }} - {{ ends_at.strftime("%H:%M") }}
-        #   Time Until:
-        #   {%- if next_start != None -%}
-        #     {% if starts_in.total_seconds() > 0 -%}
-        #     Starts in {{ starts_in.seconds | timestamp_custom("%-Hh%M", False) }}
-        #     {% else %}
-        #     Ends in {{ ends_in.seconds | timestamp_custom("%-Hh%M", False) }}
-        #     {% endif -%}
-        #   {% endif -%}
-        # {% endif %}
         tz = timezone.utc
         now = datetime.now(tz)
         if self.coordinator.data:
@@ -259,7 +200,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             ATTR_NAME: f"{NAME}",
             ATTR_MANUFACTURER: self.coordinator.provider.__class__.__name__,
             ATTR_MODEL: "API",
-            "via_device": (DOMAIN, self._device_id),
+            ATTR_VIA_DEVICE: (DOMAIN, self._device_id),
         }
 
     @property
