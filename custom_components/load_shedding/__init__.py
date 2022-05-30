@@ -3,17 +3,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from load_shedding import ScheduleError, Stage, get_schedule
 from load_shedding.providers import ProviderError, Suburb
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import CoreState, HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.core import CoreState, HomeAssistant, Config
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import ATTR_STAGE, ATTR_SUBURBS, DEFAULT_SCAN_INTERVAL, DOMAIN, PROVIDER
+from .const import ATTR_SCHEDULES, ATTR_STAGE, DEFAULT_SCAN_INTERVAL, DOMAIN, PROVIDER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 class LoadSheddingDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
-    """Class to manage fetching LoadShedding data API."""
+    """Class to manage fetching LoadShedding data from Provider."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize."""
@@ -84,37 +84,41 @@ class LoadSheddingDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.provider = PROVIDER()
         self.suburbs: list[Suburb] = []
         super().__init__(
-            self.hass, _LOGGER, name=DOMAIN, update_method=self.async_update
+            self.hass, _LOGGER, name=DOMAIN, update_method=self.async_update_schedule_data
         )
 
     def add_suburb(self, suburb: Suburb = None) -> None:
         """Add a suburb to update."""
         self.suburbs.append(suburb)
 
-    async def async_update(self):
+    async def async_update_schedule_data(self) -> None:
         """Retrieve latest state."""
         try:
             stage = await self.hass.async_add_executor_job(self.provider.get_stage)
         except (ProviderError, ScheduleError) as e:
-            return {**{ATTR_STAGE: str(Stage.UNKNOWN)}}
+            raise UpdateFailed(f"{e}")
 
-        suburbs = {}
-        if stage in [Stage.UNKNOWN, Stage.NO_LOAD_SHEDDING]:
-            return {**{ATTR_STAGE: str(stage), ATTR_SUBURBS: suburbs}}
+        schedules = {}
+        if stage in [Stage.UNKNOWN]:
+            raise UpdateFailed("Unknown stage")
+
+        lookup_stage = stage
+        if lookup_stage in [Stage.NO_LOAD_SHEDDING]:
+            lookup_stage = Stage.STAGE_1
 
         for suburb in self.suburbs:
             try:
+                schedules[suburb.id] = {}
                 schedule = await self.hass.async_add_executor_job(
                     get_schedule,
                     self.provider,
                     suburb.province,
                     suburb,
-                    stage,
+                    lookup_stage,
                 )
             except (ProviderError, ScheduleError) as e:
-                _LOGGER.error(f"{e}")
-                suburbs[suburb.id] = {}
+                raise UpdateFailed(f"{e}")
             else:
-                suburbs[suburb.id] = schedule
+                schedules[suburb.id] = schedule
 
-        return {**{ATTR_STAGE: str(stage), ATTR_SUBURBS: suburbs}}
+        return {**{ATTR_STAGE: stage, ATTR_SCHEDULES: schedules}}
