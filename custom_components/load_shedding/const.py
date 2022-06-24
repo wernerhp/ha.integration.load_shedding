@@ -14,8 +14,8 @@ MANUFACTURER: Final = "Eskom"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 PROVIDER = eskom.Eskom
-STAGE_SCAN_INTERVAL = 60  # seconds
-SCHEDULE_SCAN_INTERVAL = 3600  # seconds
+DEFAULT_STAGE_SCAN_INTERVAL = 60  # seconds
+DEFAULT_SCHEDULE_SCAN_INTERVAL = 3600  # seconds
 
 CONF_MUNICIPALITY: Final = "municipality"
 CONF_OPTIONS: Final = "options"
@@ -27,12 +27,12 @@ CONF_SUBURB: Final = "suburb"
 CONF_SUBURBS: Final = "suburbs"
 CONF_SUBURB_ID: Final = "suburb_id"
 
-ATTR_END_IN: Final = "end_in"
+ATTR_END_IN: Final = "ends_in"
 ATTR_END_TIME: Final = "end_time"
 ATTR_LAST_UPDATE: Final = "last_update"
 ATTR_SCHEDULE: Final = "schedule"
 ATTR_SCHEDULES:  Final = "schedules"
 ATTR_STAGE: Final = "stage"
-ATTR_START_IN: Final = "start_in"
+ATTR_START_IN: Final = "starts_in"
 ATTR_START_TIME: Final = "start_time"
 ATTR_TIME_UNTIL: Final = "time_until"
