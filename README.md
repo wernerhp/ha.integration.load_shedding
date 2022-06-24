@@ -98,11 +98,10 @@ entities:
       (state_attr("sensor.load_shedding_milnerton", "end_time") | as_datetime |
       as_local).strftime("%H:%M") }}
     secondary: >-
-      {% if states("sensor.load_shedding_milnerton") == "off" %}  Starts in {{
-      strptime(state_attr("sensor.load_shedding_milnerton", "start_in"),
-      "%H:%M:%S").strftime("%-Hh%M") }} {% else %} Ends in {{
-      strptime(state_attr("sensor.load_shedding_milnerton", "end_in"),
-      "%H:%M:%S").strftime("%-Hh%M") }} {% endif %}
+      {% if states("sensor.load_shedding_milnerton") == "off" %}   Starts in {{
+      state_attr("sensor.load_shedding_milnerton", "start_in") }} {% else %} 
+      Ends in {{ state_attr("sensor.load_shedding_milnerton", "end_in") }}  {%
+      endif %}
     entity: sensor.load_shedding_milnerton
 ```
   </details>
