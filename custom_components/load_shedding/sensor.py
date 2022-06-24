@@ -27,14 +27,13 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from . import LoadSheddingDataUpdateCoordinator
+from . import LoadSheddingStageUpdateCoordinator, LoadSheddingScheduleUpdateCoordinator
 from .const import (
     ATTR_START_TIME,
     ATTR_END_TIME,
     ATTR_START_IN,
     ATTR_END_IN,
     ATTR_SCHEDULE,
-    ATTR_SCHEDULES,
     ATTR_STAGE,
     ATTRIBUTION,
     DOMAIN,
@@ -42,13 +41,12 @@ from .const import (
     MAX_FORECAST_DAYS,
 )
 
-
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
-
-    coordinator: LoadSheddingDataUpdateCoordinator = hass.data[DOMAIN]
+    stage_coordinator: LoadSheddingStageUpdateCoordinator = hass.data[DOMAIN+ATTR_STAGE]
+    schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = hass.data[DOMAIN+ATTR_SCHEDULE]
 
     entities: list[Entity] = []
     suburb = Suburb(
@@ -57,8 +55,8 @@ async def async_setup_entry(
         municipality=entry.data.get("municipality"),
         province=entry.data.get("province"),
     )
-    entities.append(LoadSheddingStageSensorEntity(coordinator))
-    entities.append(LoadSheddingScheduleSensorEntity(coordinator, suburb))
+    entities.append(LoadSheddingStageSensorEntity(stage_coordinator))
+    entities.append(LoadSheddingScheduleSensorEntity(schedule_coordinator, suburb))
 
     async_add_entities(entities)
 
@@ -71,10 +69,9 @@ class LoadSheddingSensorDescription(SensorEntityDescription):
 
 class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Define a LoadShedding Stage entity."""
+    coordinator: LoadSheddingStageUpdateCoordinator
 
-    coordinator: LoadSheddingDataUpdateCoordinator
-
-    def __init__(self, coordinator: LoadSheddingDataUpdateCoordinator) -> None:
+    def __init__(self, coordinator: LoadSheddingStageUpdateCoordinator) -> None:
         """Initialize."""
         super().__init__(coordinator)
 
@@ -121,16 +118,14 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle data update."""
-
         self.async_write_ha_state()
 
 
 class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Define a LoadShedding Schedule entity."""
+    coordinator: LoadSheddingScheduleUpdateCoordinator
 
-    coordinator: LoadSheddingDataUpdateCoordinator
-
-    def __init__(self, coordinator: LoadSheddingDataUpdateCoordinator, suburb: Suburb) -> None:
+    def __init__(self, coordinator: LoadSheddingScheduleUpdateCoordinator, suburb: Suburb) -> None:
         """Initialize."""
         super().__init__(coordinator)
         self.suburb = suburb
@@ -150,8 +145,8 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         self._attr_unique_id = description.key
         self.schedule = []
 
-        schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        schedule = schedules.get(self.suburb.id, {})
+        suburb_data = self.coordinator.data.get(self.suburb.id, {})
+        schedule = suburb_data.get(ATTR_SCHEDULE, {})
 
         if not schedule:
             return self._attrs
@@ -163,7 +158,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             starts_at = datetime.fromisoformat(s[0])
             ends_at = datetime.fromisoformat(s[1])
 
-            if starts_at.date() > now.date() + timedelta(days=days):
+            if starts_at > now + timedelta(days=days):
                 continue
             if ends_at < now:
                 continue
@@ -184,6 +179,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
                 return self._state
 
         if self.schedule:
+            self._state = cast(StateType, STATE_OFF)
             start_time = datetime.fromisoformat(self.schedule[0].get(ATTR_START_TIME))
             end_time = datetime.fromisoformat(self.schedule[0].get(ATTR_END_TIME))
             if start_time < now < end_time:
@@ -213,12 +209,15 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         now = datetime.now(tz)
         starts_in = ends_in = None
         for s in self.schedule:
+            if not ends_in:
+                ends_at = datetime.fromisoformat(s.get(ATTR_END_TIME))
+                ends_in = ends_at - now
+                ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
+
             starts_at = datetime.fromisoformat(s.get(ATTR_START_TIME))
-            ends_at = datetime.fromisoformat(s.get(ATTR_END_TIME))
             starts_in = starts_at - now
             starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
-            ends_in = ends_at - now
-            ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
+
             if starts_in.total_seconds() > 0:
                 break
 
@@ -237,5 +236,4 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle data update."""
-
         self.async_write_ha_state()

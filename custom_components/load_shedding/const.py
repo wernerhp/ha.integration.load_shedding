@@ -3,15 +3,19 @@ from __future__ import annotations
 
 from typing import Final
 
+from load_shedding import Stage
 from load_shedding.providers import eskom
 
 ATTRIBUTION: Final = "Data provided by Eskom"
-DEFAULT_SCAN_INTERVAL = 60  # seconds
+# TODO: Make Default stage configurable in config flow.
+DEFAULT_STAGE = Stage.STAGE_4
 DOMAIN: Final = "load_shedding"
 MANUFACTURER: Final = "Eskom"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 PROVIDER = eskom.Eskom
+STAGE_SCAN_INTERVAL = 60  # seconds
+SCHEDULE_SCAN_INTERVAL = 3600  # seconds
 
 CONF_MUNICIPALITY: Final = "municipality"
 CONF_OPTIONS: Final = "options"
