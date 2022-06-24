@@ -41,12 +41,14 @@ from .const import (
     MAX_FORECAST_DAYS,
 )
 
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
-    stage_coordinator: LoadSheddingStageUpdateCoordinator = hass.data[DOMAIN+ATTR_STAGE]
-    schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = hass.data[DOMAIN+ATTR_SCHEDULE]
+    coordinators = hass.data.get(DOMAIN, {})
+    stage_coordinator: LoadSheddingStageUpdateCoordinator = coordinators.get(ATTR_STAGE)
+    schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = coordinators.get(ATTR_SCHEDULE)
 
     entities: list[Entity] = []
     suburb = Suburb(
@@ -225,8 +227,8 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             {
                 ATTR_START_TIME: self.schedule[0].get(ATTR_START_TIME),
                 ATTR_END_TIME: self.schedule[0].get(ATTR_END_TIME),
-                ATTR_START_IN: str(starts_in),
-                ATTR_END_IN: str(ends_in),
+                ATTR_START_IN: starts_in.total_seconds(),
+                ATTR_END_IN: ends_in.total_seconds(),
                 ATTR_SCHEDULE: self.schedule,
             }
         )

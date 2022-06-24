@@ -13,7 +13,7 @@ from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant, Config
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import ATTR_SCHEDULE, ATTR_SCHEDULES, ATTR_STAGE, STAGE_SCAN_INTERVAL, SCHEDULE_SCAN_INTERVAL, DEFAULT_STAGE, DOMAIN, PROVIDER
+from .const import ATTR_SCHEDULE, ATTR_SCHEDULES, ATTR_STAGE, DEFAULT_STAGE_SCAN_INTERVAL, DEFAULT_SCHEDULE_SCAN_INTERVAL, DEFAULT_STAGE, DOMAIN, PROVIDER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,7 +27,6 @@ async def async_setup(hass: HomeAssistant, config: Config):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
-
     suburb = Suburb(
         id=entry.data.get("suburb_id"),
         name=entry.data.get("suburb"),
@@ -36,10 +35,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     stage_coordinator = LoadSheddingStageUpdateCoordinator(hass)
-    await stage_coordinator.async_config_entry_first_refresh()
 
     schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass)
     schedule_coordinator.add_suburb(suburb)
+
+    hass.data[DOMAIN] = {
+        ATTR_STAGE: stage_coordinator,
+        ATTR_SCHEDULE: schedule_coordinator
+    }
+
+    await stage_coordinator.async_config_entry_first_refresh()
     await schedule_coordinator.async_config_entry_first_refresh()
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
@@ -47,12 +52,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _schedule_updates(*_):
         """Activate the data update schedule_coordinator."""
         stage_coordinator.update_interval = timedelta(
-            seconds=entry.options.get(CONF_SCAN_INTERVAL, STAGE_SCAN_INTERVAL)
+            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_STAGE_SCAN_INTERVAL)
         )
         await stage_coordinator.async_refresh()
 
         schedule_coordinator.update_interval = timedelta(
-            seconds=entry.options.get(CONF_SCAN_INTERVAL, SCHEDULE_SCAN_INTERVAL)
+            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCHEDULE_SCAN_INTERVAL)
         )
         await schedule_coordinator.async_refresh()
 
@@ -60,9 +65,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await _schedule_updates()
     else:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _schedule_updates)
-
-    hass.data[DOMAIN+ATTR_STAGE] = stage_coordinator
-    hass.data[DOMAIN+ATTR_SCHEDULE] = schedule_coordinator
 
     hass.config_entries.async_setup_platforms(entry, PLATFORMS)
 
@@ -90,8 +92,9 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Initialize."""
         self.hass = hass
         self.provider = PROVIDER()
+        self.name = f"{DOMAIN}_{ATTR_STAGE}"
         super().__init__(
-            self.hass, _LOGGER, name=DOMAIN, update_method=self.async_update_stage
+            self.hass, _LOGGER, name=self.name, update_method=self.async_update_stage
         )
 
     async def async_update_stage(self) -> None:
@@ -115,18 +118,19 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
         self.hass = hass
         self.provider = PROVIDER()
         self.suburbs: list[Suburb] = []
+        self.name = f"{DOMAIN}_{ATTR_SCHEDULE}"
         super().__init__(
-            self.hass, _LOGGER, name=DOMAIN, update_method=self.async_update_schedule_data
+            self.hass, _LOGGER, name=self.name, update_method=self.async_update_schedule
         )
 
     def add_suburb(self, suburb: Suburb = None) -> None:
         """Add a suburb to update."""
         self.suburbs.append(suburb)
 
-    async def async_update_schedule_data(self) -> None:
+    async def async_update_schedule(self) -> None:
         """Retrieve schedule data."""
         stage: Stage = None
-        stage_coordinator: LoadSheddingStageUpdateCoordinator = self.hass.data[DOMAIN+ATTR_STAGE]
+        stage_coordinator: LoadSheddingStageUpdateCoordinator = self.hass.data.get(DOMAIN, {}).get(ATTR_STAGE)
         if stage_coordinator.data:
             stage = Stage(stage_coordinator.data.get(ATTR_STAGE))
 

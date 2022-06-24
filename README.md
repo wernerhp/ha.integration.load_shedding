@@ -57,7 +57,7 @@ Bitcoin: 3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE
 # Sensor
 The load shedding sensor State will always reflect the current load shedding stage.  
 i.e When load shedding is suspended, it will show **No Load Shedding**.  When Stage 2 is active, it will show **Stage 2**.  
-> Since the schedules differ depending on the Stage, the correct `start_time`, `end_time`, `start_in`, `end_in` and `schedule` times only show once there is an active Stage as it needs to know which stage to query.  When there is No Load Shedding the Stage 1 schedule will be shown.
+> Since the schedules differ depending on the Stage, the correct `start_time`, `end_time`, `starts_in`, `ends_in` and `schedule` times only show once there is an active Stage as it needs to know which stage to query.  When there is No Load Shedding the Stage 1 schedule will be shown.
 
 <details>
   <summary>Screenshot</summary>
@@ -98,10 +98,11 @@ entities:
       (state_attr("sensor.load_shedding_milnerton", "end_time") | as_datetime |
       as_local).strftime("%H:%M") }}
     secondary: >-
-      {% if states("sensor.load_shedding_milnerton") == "off" %}   Starts in {{
-      state_attr("sensor.load_shedding_milnerton", "start_in") }} {% else %} 
-      Ends in {{ state_attr("sensor.load_shedding_milnerton", "end_in") }}  {%
-      endif %}
+      {% if states("sensor.load_shedding_milnerton") == "off" %}  
+      Starts in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "starts_in")) }}
+      {% else %} 
+      Ends in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "ends_in")) }} 
+      {% endif %}
     entity: sensor.load_shedding_milnerton
 ```
   </details>
@@ -180,8 +181,7 @@ description: ''
 trigger:
   - platform: template
     value_template: >-
-      {{ strptime(state_attr("sensor.load_shedding_milnerton", "start_in"),
-      "%H:%M:%S") == timedelta(minutes=15) }}
+      {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "starts_in")) == timedelta(minutes=15) }}
 condition:
   - condition: and
     conditions:
