@@ -3,9 +3,9 @@
   "name": "Load Shedding",
   "documentation": "https://www.home-assistant.io/integrations/load_shedding/",
   "issue_tracker": "https://github.com/wernerhp/ha_integration_load_shedding/issues",
-  "requirements": ["load-shedding==0.4.0"],
+  "requirements": ["load-shedding==0.5.0"],
   "codeowners": ["@wernerhp"],
-  "version": "0.0.1",
+  "version": "0.2.0",
   "config_flow": true,
   "iot_class": "local_polling"
 }
