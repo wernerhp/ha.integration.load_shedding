@@ -5,7 +5,7 @@ from datetime import timedelta
 import logging
 from typing import Any, Dict
 
-from load_shedding import ScheduleError, Stage, get_schedule
+from load_shedding import StageError, Stage, get_stage, get_schedule
 from load_shedding.providers import ProviderError, Suburb
 
 from homeassistant.config_entries import ConfigEntry
@@ -13,7 +13,7 @@ from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant, Config
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import ATTR_SCHEDULE, ATTR_SCHEDULES, ATTR_STAGE, DEFAULT_STAGE_SCAN_INTERVAL, DEFAULT_SCHEDULE_SCAN_INTERVAL, DEFAULT_STAGE, DOMAIN, PROVIDER
+from .const import ATTR_SCHEDULE, ATTR_SCHEDULES, ATTR_STAGE, DEFAULT_SCAN_INTERVAL, DEFAULT_STAGE, DOMAIN, PROVIDER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,12 +52,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _schedule_updates(*_):
         """Activate the data update schedule_coordinator."""
         stage_coordinator.update_interval = timedelta(
-            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_STAGE_SCAN_INTERVAL)
+            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         )
         await stage_coordinator.async_refresh()
 
         schedule_coordinator.update_interval = timedelta(
-            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCHEDULE_SCAN_INTERVAL)
+            seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         )
         await schedule_coordinator.async_refresh()
 
@@ -91,6 +91,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize."""
         self.hass = hass
+        # TODO: Make providers selectable from config flow once more are available.
         self.provider = PROVIDER()
         self.name = f"{DOMAIN}_{ATTR_STAGE}"
         super().__init__(
@@ -100,9 +101,13 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def async_update_stage(self) -> None:
         """Retrieve latest stage."""
         try:
-            stage = await self.hass.async_add_executor_job(self.provider.get_stage)
+            stage = await self.hass.async_add_executor_job(
+                get_stage,
+                self.provider,
+            )
         except ProviderError as e:
-            raise UpdateFailed(f"{e}")
+            _LOGGER.error(f"{e}")
+            return self.data
 
         if stage in [Stage.UNKNOWN]:
             raise UpdateFailed("Unknown stage")
@@ -142,7 +147,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
             try:
                 schedules[suburb.id] = {}
                 schedule = await self.async_get_suburb_schedule(suburb, stage)
-            except (ProviderError, ScheduleError) as e:
+            except (ProviderError, StageError) as e:
                 _LOGGER.error(f"unable to get schedule for suburb: {suburb} {stage} {e}")
                 continue
             else:
@@ -160,7 +165,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 suburb,
                 stage,
             )
-        except (ProviderError, ScheduleError) as e:
+        except (ProviderError, StageError) as e:
             raise UpdateFailed(f"{e}")
 
         return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: schedule}}
