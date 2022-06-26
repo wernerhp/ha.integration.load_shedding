@@ -153,27 +153,27 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not schedule:
             return self._attrs
 
-        tz = timezone.utc
-        now = datetime.now(tz)
+        now = datetime.now(timezone.utc)
         days = MAX_FORECAST_DAYS
         for s in schedule:
-            starts_at = datetime.fromisoformat(s[0])
-            ends_at = datetime.fromisoformat(s[1])
+            start_time = datetime.fromisoformat(s[0])
+            end_time = datetime.fromisoformat(s[1])
 
-            if starts_at > now + timedelta(days=days):
+            if start_time > now + timedelta(days=days):
                 continue
-            if ends_at < now:
+
+            if end_time < now:
                 continue
+
             self.schedule.append({
-                ATTR_START_TIME: str(starts_at.isoformat()),
-                ATTR_END_TIME: str(ends_at.isoformat()),
+                ATTR_START_TIME: str(start_time.isoformat()),
+                ATTR_END_TIME: str(end_time.isoformat()),
             })
 
     @property
     def native_value(self) -> StateType:
         """Return the schedule state."""
-        tz = timezone.utc
-        now = datetime.now(tz)
+        now = datetime.now(timezone.utc)
         if self.coordinator.data:
             stage = self.coordinator.data.get(ATTR_STAGE)
             if stage in [Stage.UNKNOWN, Stage.NO_LOAD_SHEDDING]:
@@ -207,8 +207,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.coordinator.data:
             return self._attrs
 
-        tz = timezone.utc
-        now = datetime.now(tz)
+        now = datetime.now(timezone.utc)
         starts_in = ends_in = None
         for s in self.schedule:
             if not ends_in:
