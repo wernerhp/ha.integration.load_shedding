@@ -173,7 +173,9 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         now = datetime.now(timezone.utc)
         if self.coordinator.data:
             stage = self.coordinator.data.get(ATTR_STAGE)
-            if stage in [Stage.UNKNOWN, Stage.NO_LOAD_SHEDDING]:
+            if stage in [Stage.UNKNOWN]:
+                return self._state
+            if stage in [Stage.NO_LOAD_SHEDDING]:
                 self._state = cast(StateType, STATE_OFF)
                 return self._state
 
