@@ -105,8 +105,8 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 get_stage,
                 self.provider,
             )
-        except ProviderError as e:
-            _LOGGER.debug(f"{e}")
+        except (ProviderError, StageError, Exception) as e:
+            _LOGGER.error(f"{e}")
             return self.data
         else:
             if stage in [Stage.UNKNOWN]:
@@ -147,8 +147,8 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
             try:
                 schedules[suburb.id] = {}
                 schedule = await self.async_get_suburb_schedule(suburb, stage)
-            except (ProviderError, StageError) as e:
-                _LOGGER.debug(f"unable to get schedule for suburb: {suburb} {stage} {e}")
+            except UpdateFailed as e:
+                _LOGGER.error(f"{e}")
                 continue
             else:
                 schedules[suburb.id] = schedule
@@ -166,6 +166,8 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 stage,
             )
         except (ProviderError, StageError) as e:
+            raise UpdateFailed(f"{e}")
+        except Exception as e:
             raise UpdateFailed(f"{e}")
 
         return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: schedule}}

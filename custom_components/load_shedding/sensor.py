@@ -150,9 +150,6 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         suburb_data = self.coordinator.data.get(self.suburb.id, {})
         schedule = suburb_data.get(ATTR_SCHEDULE, {})
 
-        if not schedule:
-            return self._attrs
-
         now = datetime.now(timezone.utc)
         days = MAX_FORECAST_DAYS
         for s in schedule:
@@ -205,6 +202,9 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
     def extra_state_attributes(self) -> dict[str, list, Any]:
         """Return the state attributes."""
         if not self.coordinator.data:
+            return self._attrs
+
+        if not self.schedule:
             return self._attrs
 
         now = datetime.now(timezone.utc)

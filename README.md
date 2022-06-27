@@ -98,10 +98,10 @@ entities:
       (state_attr("sensor.load_shedding_milnerton", "end_time") | as_datetime |
       as_local).strftime("%H:%M") }}
     secondary: >-
-      {% if states("sensor.load_shedding_milnerton") == "off" %}  
-      Starts in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "starts_in")) }}
-      {% else %} 
-      Ends in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "ends_in")) }} 
+      {% if states("sensor.load_shedding_milnerton") == "off" %}
+      Starts in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "starts_in")) }} 
+      {% else %}
+      Ends in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "ends_in")) }}
       {% endif %}
     entity: sensor.load_shedding_milnerton
 ```
@@ -121,34 +121,35 @@ trigger:
   - platform: state
     entity_id:
       - sensor.load_shedding_stage
-    for:
-      hours: 0
-      minutes: 0
-      seconds: 0
-condition: []
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.from_state.state != 'unavailable' and trigger.to_state.state != 'unavailable' }}
 action:
   - choose:
       - conditions:
-          - condition: time
-            after: input_datetime.sleep
-            weekday:
-              - mon
-              - tue
-              - wed
-              - thu
-              - fri
-              - sat
-              - sun
-          - condition: time
-            before: input_datetime.wake
-            weekday:
-              - sun
-              - sat
-              - fri
-              - thu
-              - wed
-              - tue
-              - mon
+          - condition: or
+            conditions:
+              - condition: time
+                after: input_datetime.sleep
+                weekday:
+                  - mon
+                  - tue
+                  - wed
+                  - thu
+                  - fri
+                  - sat
+                  - sun
+              - condition: time
+                before: input_datetime.wake
+                weekday:
+                  - sun
+                  - sat
+                  - fri
+                  - thu
+                  - wed
+                  - tue
+                  - mon
         sequence:
           - wait_for_trigger:
               - platform: time
@@ -167,6 +168,7 @@ action:
         {% if is_state("sensor.load_shedding_stage", "No Load Shedding") %} Load
         Shedding suspended {% else %} Load Shedding {{
         states.sensor.load_shedding_stage.state }} {% endif %}
+    enabled: false
 mode: single
 ```
   </details>
