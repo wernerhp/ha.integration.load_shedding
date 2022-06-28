@@ -1,5 +1,6 @@
 """Support for the LoadShedding service."""
 from __future__ import annotations
+import logging
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -34,11 +35,15 @@ from .const import (
     ATTR_START_IN,
     ATTR_END_IN,
     ATTR_SCHEDULE,
+    ATTR_SCHEDULES,
+    ATTR_SCHEDULE_STAGE,
     ATTR_STAGE,
     ATTRIBUTION,
     DOMAIN,
     NAME,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -155,13 +160,12 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if stage in [Stage.UNKNOWN]:
             return self._state
 
-        if stage in [Stage.NO_LOAD_SHEDDING]:
-            self._state = cast(StateType, STATE_OFF)
+        schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
+        suburb_data = schedules.get(self.suburb.id, [])
+        if not suburb_data:
             return self._state
 
-        schedule = self.coordinator.data.get(ATTR_SCHEDULE, {})
-        if not schedule:
-            return self._state
+        schedule = suburb_data.get(ATTR_SCHEDULE, {})
 
         self._state = cast(StateType, STATE_OFF)
         now = datetime.now(timezone.utc)
@@ -189,25 +193,32 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.coordinator.data:
             return self._attrs
 
-        schedule = self.coordinator.data.get(ATTR_SCHEDULE, {})
-        if not schedule:
+        schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
+        suburb_data = schedules.get(self.suburb.id, [])
+        if not suburb_data:
             return self._attrs
+
+        stage = suburb_data.get(ATTR_STAGE, Stage.UNKNOWN)
+        schedule = suburb_data.get(ATTR_SCHEDULE, {})
 
         now = datetime.now(timezone.utc)
         ends_at = datetime.fromisoformat(schedule[0].get(ATTR_END_TIME))
         ends_in = ends_at - now
         ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
+        ends_in = int(ends_in.total_seconds() / 60)  # minutes
 
         starts_at = datetime.fromisoformat(schedule[0].get(ATTR_START_TIME))
         starts_in = starts_at - now
         starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
+        starts_in = int(starts_in.total_seconds() / 60)  # minutes
 
         self._attrs.update(
             {
                 ATTR_START_TIME: schedule[0].get(ATTR_START_TIME),
                 ATTR_END_TIME: schedule[0].get(ATTR_END_TIME),
-                ATTR_START_IN: starts_in.total_seconds(),
-                ATTR_END_IN: ends_in.total_seconds(),
+                ATTR_START_IN: starts_in,
+                ATTR_END_IN: ends_in,
+                ATTR_SCHEDULE_STAGE: str(stage),
                 ATTR_SCHEDULE: schedule,
             }
         )

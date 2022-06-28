@@ -148,23 +148,24 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
         if stage_coordinator.data:
             stage = Stage(stage_coordinator.data.get(ATTR_STAGE))
 
-        if stage in [Stage.NO_LOAD_SHEDDING]:
-            stage = DEFAULT_STAGE
+        forecast_stage = stage
+        if forecast_stage in [Stage.NO_LOAD_SHEDDING]:
+            forecast_stage = DEFAULT_STAGE
 
         schedules = {}
         for suburb in self.suburbs:
             try:
                 schedules[suburb.id] = {}
-                forecast = await self.async_get_suburb_forecast(suburb, stage)
+                data = await self.async_get_suburb_data(suburb, forecast_stage)
             except UpdateFailed as e:
                 _LOGGER.error(f"{e}")
                 continue
             else:
-                schedules[suburb.id] = forecast
+                schedules[suburb.id] = data
 
-        return schedules
+        return {**{ATTR_STAGE: stage, ATTR_SCHEDULES: schedules}}
 
-    async def async_get_suburb_forecast(self, suburb: Suburb, stage: Stage = None) -> Dict:
+    async def async_get_suburb_data(self, suburb: Suburb, stage: Stage = None) -> Dict:
         """Retrieve schedule for given suburb and stage."""
         try:
             schedule = await self.hass.async_add_executor_job(
@@ -179,7 +180,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
         except Exception as e:
             raise UpdateFailed(f"{e}")
         else:
-            forecast = []
+            data = []
             now = datetime.now(timezone.utc)
             for s in schedule:
                 start_time = datetime.fromisoformat(s[0])
@@ -191,9 +192,9 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 if end_time < now:
                     continue
 
-                forecast.append({
+                data.append({
                     ATTR_START_TIME: str(start_time.isoformat()),
                     ATTR_END_TIME: str(end_time.isoformat()),
                 })
 
-            return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: forecast}}
+            return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: data}}

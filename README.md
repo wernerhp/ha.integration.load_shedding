@@ -93,15 +93,12 @@ entities:
     name: Milnerton
     active: '{{ states("sensor.load_shedding_milnerton") == "on" }}'
     state: >-
-      {{ (state_attr("sensor.load_shedding_milnerton", "start_time") |
-      as_datetime | as_local).strftime("%H:%M") }}  -  {{
-      (state_attr("sensor.load_shedding_milnerton", "end_time") | as_datetime |
-      as_local).strftime("%H:%M") }}
+      {{ (state_attr("sensor.load_shedding_milnerton", "start_time") | as_datetime | as_local).strftime("%H:%M") }}  -  {{ (state_attr("sensor.load_shedding_milnerton", "end_time") | as_datetime | as_local).strftime("%H:%M") }}
     secondary: >-
       {% if states("sensor.load_shedding_milnerton") == "off" %}
-      Starts in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "starts_in")) }} 
-      {% else %}
-      Ends in {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "ends_in")) }}
+      Starts in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton", "starts_in")) }}
+      {% else %} 
+      Ends in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton", "ends_in")) }}
       {% endif %}
     entity: sensor.load_shedding_milnerton
 ```
@@ -183,7 +180,7 @@ description: ''
 trigger:
   - platform: template
     value_template: >-
-      {{ timedelta(seconds=state_attr("sensor.load_shedding_milnerton", "starts_in")) == timedelta(minutes=15) }}
+      {{ timedelta(minutes=(state_attr("sensor.load_shedding_milnerton", "starts_in"))) == timedelta(minutes=15) }}
 condition:
   - condition: and
     conditions:
