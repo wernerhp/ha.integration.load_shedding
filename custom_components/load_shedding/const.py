@@ -14,7 +14,7 @@ MANUFACTURER: Final = "Eskom"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 PROVIDER = eskom.Eskom
-DEFAULT_SCAN_INTERVAL = 60  # seconds
+DEFAULT_SCAN_INTERVAL = 61  # seconds
 
 CONF_MUNICIPALITY: Final = "municipality"
 CONF_OPTIONS: Final = "options"

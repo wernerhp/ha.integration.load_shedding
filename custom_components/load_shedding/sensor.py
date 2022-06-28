@@ -38,7 +38,6 @@ from .const import (
     ATTRIBUTION,
     DOMAIN,
     NAME,
-    MAX_FORECAST_DAYS,
 )
 
 
@@ -145,47 +144,31 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         self._attrs = {ATTR_ATTRIBUTION: ATTRIBUTION}
         self._attr_name = f"{NAME} {suburb.name}"
         self._attr_unique_id = description.key
-        self.schedule = []
-
-        suburb_data = self.coordinator.data.get(self.suburb.id, {})
-        schedule = suburb_data.get(ATTR_SCHEDULE, {})
-
-        now = datetime.now(timezone.utc)
-        days = MAX_FORECAST_DAYS
-        for s in schedule:
-            start_time = datetime.fromisoformat(s[0])
-            end_time = datetime.fromisoformat(s[1])
-
-            if start_time > now + timedelta(days=days):
-                continue
-
-            if end_time < now:
-                continue
-
-            self.schedule.append({
-                ATTR_START_TIME: str(start_time.isoformat()),
-                ATTR_END_TIME: str(end_time.isoformat()),
-            })
 
     @property
     def native_value(self) -> StateType:
         """Return the schedule state."""
-        now = datetime.now(timezone.utc)
-        if self.coordinator.data:
-            stage = self.coordinator.data.get(ATTR_STAGE)
-            if stage in [Stage.UNKNOWN]:
-                return self._state
-            if stage in [Stage.NO_LOAD_SHEDDING]:
-                self._state = cast(StateType, STATE_OFF)
-                return self._state
+        if not self.coordinator.data:
+            return self._state
 
-        if self.schedule:
+        stage = self.coordinator.data.get(ATTR_STAGE, Stage.UNKNOWN)
+        if stage in [Stage.UNKNOWN]:
+            return self._state
+
+        if stage in [Stage.NO_LOAD_SHEDDING]:
             self._state = cast(StateType, STATE_OFF)
-            start_time = datetime.fromisoformat(self.schedule[0].get(ATTR_START_TIME))
-            end_time = datetime.fromisoformat(self.schedule[0].get(ATTR_END_TIME))
-            if start_time < now < end_time:
-                self._state = cast(StateType, STATE_ON)
-                return self._state
+            return self._state
+
+        schedule = self.coordinator.data.get(ATTR_SCHEDULE, {})
+        if not schedule:
+            return self._state
+
+        self._state = cast(StateType, STATE_OFF)
+        now = datetime.now(timezone.utc)
+        start_time = datetime.fromisoformat(schedule[0].get(ATTR_START_TIME))
+        end_time = datetime.fromisoformat(schedule[0].get(ATTR_END_TIME))
+        if start_time < now < end_time:
+            self._state = cast(StateType, STATE_ON)
 
         return self._state
 
@@ -206,31 +189,26 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.coordinator.data:
             return self._attrs
 
-        if not self.schedule:
+        schedule = self.coordinator.data.get(ATTR_SCHEDULE, {})
+        if not schedule:
             return self._attrs
 
         now = datetime.now(timezone.utc)
-        starts_in = ends_in = None
-        for s in self.schedule:
-            if not ends_in:
-                ends_at = datetime.fromisoformat(s.get(ATTR_END_TIME))
-                ends_in = ends_at - now
-                ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
+        ends_at = datetime.fromisoformat(schedule[0].get(ATTR_END_TIME))
+        ends_in = ends_at - now
+        ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
 
-            starts_at = datetime.fromisoformat(s.get(ATTR_START_TIME))
-            starts_in = starts_at - now
-            starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
-
-            if starts_in.total_seconds() > 0:
-                break
+        starts_at = datetime.fromisoformat(schedule[0].get(ATTR_START_TIME))
+        starts_in = starts_at - now
+        starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
 
         self._attrs.update(
             {
-                ATTR_START_TIME: self.schedule[0].get(ATTR_START_TIME),
-                ATTR_END_TIME: self.schedule[0].get(ATTR_END_TIME),
+                ATTR_START_TIME: schedule[0].get(ATTR_START_TIME),
+                ATTR_END_TIME: schedule[0].get(ATTR_END_TIME),
                 ATTR_START_IN: starts_in.total_seconds(),
                 ATTR_END_IN: ends_in.total_seconds(),
-                ATTR_SCHEDULE: self.schedule,
+                ATTR_SCHEDULE: schedule,
             }
         )
 

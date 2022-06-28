@@ -1,7 +1,7 @@
 """The LoadShedding component."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any, Dict
 
@@ -13,7 +13,18 @@ from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant, Config
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import ATTR_SCHEDULE, ATTR_SCHEDULES, ATTR_STAGE, DEFAULT_SCAN_INTERVAL, DEFAULT_STAGE, DOMAIN, PROVIDER
+from .const import (
+    ATTR_SCHEDULE,
+    ATTR_SCHEDULES,
+    ATTR_STAGE,
+    ATTR_START_TIME,
+    ATTR_END_TIME,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_STAGE,
+    DOMAIN,
+    PROVIDER,
+    MAX_FORECAST_DAYS
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
     async def _schedule_updates(*_):
-        """Activate the data update schedule_coordinator."""
+        """Activate the data update coordinators."""
         stage_coordinator.update_interval = timedelta(
             seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         )
@@ -67,13 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _schedule_updates)
 
     hass.config_entries.async_setup_platforms(entry, PLATFORMS)
-
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload Load Shedding Entry from config_entry."""
-
     unload_ok = await hass.config_entries.async_unload_platforms(
         config_entry, PLATFORMS
     )
@@ -116,7 +125,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
 
 class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
-    """Class to manage fetching LoadShedding data from Provider."""
+    """Class to manage fetching LoadShedding schedule from Provider."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize."""
@@ -146,16 +155,16 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
         for suburb in self.suburbs:
             try:
                 schedules[suburb.id] = {}
-                schedule = await self.async_get_suburb_schedule(suburb, stage)
+                forecast = await self.async_get_suburb_forecast(suburb, stage)
             except UpdateFailed as e:
                 _LOGGER.error(f"{e}")
                 continue
             else:
-                schedules[suburb.id] = schedule
+                schedules[suburb.id] = forecast
 
         return schedules
 
-    async def async_get_suburb_schedule(self, suburb: Suburb, stage: Stage = None) -> Dict:
+    async def async_get_suburb_forecast(self, suburb: Suburb, stage: Stage = None) -> Dict:
         """Retrieve schedule for given suburb and stage."""
         try:
             schedule = await self.hass.async_add_executor_job(
@@ -169,5 +178,22 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
             raise UpdateFailed(f"{e}")
         except Exception as e:
             raise UpdateFailed(f"{e}")
+        else:
+            forecast = []
+            now = datetime.now(timezone.utc)
+            for s in schedule:
+                start_time = datetime.fromisoformat(s[0])
+                end_time = datetime.fromisoformat(s[1])
 
-        return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: schedule}}
+                if start_time > now + timedelta(days=MAX_FORECAST_DAYS):
+                    continue
+
+                if end_time < now:
+                    continue
+
+                forecast.append({
+                    ATTR_START_TIME: str(start_time.isoformat()),
+                    ATTR_END_TIME: str(end_time.isoformat()),
+                })
+
+            return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: forecast}}
