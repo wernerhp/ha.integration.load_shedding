@@ -1,22 +1,28 @@
 {
-  "config": {
-    "step": {
-      "search": {
-        "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown.",
-        "data": {
-          "province": "Province",
-          "search": "Search",
-          "suburb": "Suburb",
-          "suburb_id": "Suburb ID"
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured",
+            "cannot_connect": "Failed to connect"
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "no_provider": "No provider selected.",
+            "no_results_found": "No results found.  Try a different suburb with the same schedule.",
+            "provider_error": "Unable to reach Provider.  See Logs for details."
+        },
+        "step": {
+            "search": {
+                "data": {
+                    "provider": "Provider",
+                    "province": "Province",
+                    "results": "Results",
+                    "search": "Search",
+                    "stage": "Stage",
+                    "suburb": "Suburb",
+                    "suburb_id": "Suburb ID"
+                },
+                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the results."
+            }
         }
-      }
-    },
-    "error": {
-      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
-    },
-    "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
-      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
     }
-  }
 }

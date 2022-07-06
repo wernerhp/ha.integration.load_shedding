@@ -1,13 +1,10 @@
 """Support for the LoadShedding service."""
 from __future__ import annotations
-import logging
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
-
-from load_shedding import Stage
-from load_shedding.providers import Suburb
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
@@ -28,8 +25,11 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from load_shedding import Stage
+from load_shedding.providers import Suburb
 from . import LoadSheddingStageUpdateCoordinator, LoadSheddingScheduleUpdateCoordinator
 from .const import (
+    API,
     ATTR_START_TIME,
     ATTR_END_TIME,
     ATTR_START_IN,
@@ -39,8 +39,14 @@ from .const import (
     ATTR_SCHEDULE_STAGE,
     ATTR_STAGE,
     ATTRIBUTION,
+    CONF_MUNICIPALITY,
+    CONF_PROVINCE,
+    CONF_SUBURB,
+    CONF_SUBURB_ID,
+    CONF_SUBURBS,
     DOMAIN,
     NAME,
+    MANUFACTURER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,18 +57,28 @@ async def async_setup_entry(
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
     coordinators = hass.data.get(DOMAIN, {})
-    stage_coordinator: LoadSheddingStageUpdateCoordinator = coordinators.get(ATTR_STAGE)
-    schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = coordinators.get(ATTR_SCHEDULE)
-
+    entity_registry = hass.data.get("entity_registry", {})
     entities: list[Entity] = []
-    suburb = Suburb(
-        id=entry.data.get("suburb_id"),
-        name=entry.data.get("suburb"),
-        municipality=entry.data.get("municipality"),
-        province=entry.data.get("province"),
+
+    stage_coordinator: LoadSheddingStageUpdateCoordinator = coordinators.get(ATTR_STAGE)
+    stage_entity = LoadSheddingStageSensorEntity(stage_coordinator)
+    # Avoid registering the stage sensor entity more than
+    # if not entity_registry.entities.data.get("sensor.load_shedding_stage"):
+    entities.append(stage_entity)
+
+    schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = coordinators.get(
+        ATTR_SCHEDULE
     )
-    entities.append(LoadSheddingStageSensorEntity(stage_coordinator))
-    entities.append(LoadSheddingScheduleSensorEntity(schedule_coordinator, suburb))
+
+    for data in entry.data.get(CONF_SUBURBS):
+        suburb = Suburb(
+            id=data.get(CONF_SUBURB_ID),
+            name=data.get(CONF_SUBURB),
+            municipality=data.get(CONF_MUNICIPALITY),
+            province=data.get(CONF_PROVINCE),
+        )
+        suburb_entity = LoadSheddingScheduleSensorEntity(schedule_coordinator, suburb)
+        entities.append(suburb_entity)
 
     async_add_entities(entities)
 
@@ -70,11 +86,13 @@ async def async_setup_entry(
 @dataclass
 class LoadSheddingSensorDescription(SensorEntityDescription):
     """Class describing LoadShedding sensor entities."""
+
     pass
 
 
 class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Define a LoadShedding Stage entity."""
+
     coordinator: LoadSheddingStageUpdateCoordinator
 
     def __init__(self, coordinator: LoadSheddingStageUpdateCoordinator) -> None:
@@ -91,9 +109,11 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         self.entity_description = description
         self._device_id = "loadshedding.eskom.co.za"
         self._state: StateType = None
-        self._attrs = {ATTR_ATTRIBUTION: ATTRIBUTION}
+        self._attrs = {
+            ATTR_ATTRIBUTION: ATTRIBUTION.format(provider=coordinator.provider.name)
+        }
         self._attr_name = f"{NAME} Stage"
-        self._attr_unique_id = description.key
+        self._attr_unique_id = "stage"
 
     @property
     def native_value(self) -> StateType:
@@ -109,8 +129,8 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         return {
             ATTR_IDENTIFIERS: {(DOMAIN, self._device_id)},
             ATTR_NAME: f"{NAME}",
-            ATTR_MANUFACTURER: self.coordinator.provider.__class__.__name__,
-            ATTR_MODEL: "API",
+            ATTR_MANUFACTURER: MANUFACTURER,
+            ATTR_MODEL: API,
             ATTR_VIA_DEVICE: (DOMAIN, self._device_id),
         }
 
@@ -129,9 +149,12 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
 
 class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Define a LoadShedding Schedule entity."""
+
     coordinator: LoadSheddingScheduleUpdateCoordinator
 
-    def __init__(self, coordinator: LoadSheddingScheduleUpdateCoordinator, suburb: Suburb) -> None:
+    def __init__(
+        self, coordinator: LoadSheddingScheduleUpdateCoordinator, suburb: Suburb
+    ) -> None:
         """Initialize."""
         super().__init__(coordinator)
         self.suburb = suburb
@@ -146,9 +169,11 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         self.entity_description = description
         self._device_id = "loadshedding.eskom.co.za"
         self._state: StateType = None
-        self._attrs = {ATTR_ATTRIBUTION: ATTRIBUTION}
+        self._attrs = {
+            ATTR_ATTRIBUTION: ATTRIBUTION.format(provider=coordinator.provider.name)
+        }
         self._attr_name = f"{NAME} {suburb.name}"
-        self._attr_unique_id = description.key
+        self._attr_unique_id = f"{suburb.id}"
 
     @property
     def native_value(self) -> StateType:
@@ -182,8 +207,8 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         return {
             ATTR_IDENTIFIERS: {(DOMAIN, self._device_id)},
             ATTR_NAME: f"{NAME}",
-            ATTR_MANUFACTURER: self.coordinator.provider.__class__.__name__,
-            ATTR_MODEL: "API",
+            ATTR_MANUFACTURER: MANUFACTURER,
+            ATTR_MODEL: API,
             ATTR_VIA_DEVICE: (DOMAIN, self._device_id),
         }
 

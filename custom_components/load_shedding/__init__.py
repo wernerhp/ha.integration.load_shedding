@@ -1,29 +1,41 @@
 """The LoadShedding component."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
-
-from load_shedding import StageError, Stage, get_stage, get_schedule
-from load_shedding.providers import ProviderError, Suburb
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant, Config
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from load_shedding import (
+    Provider,
+    StageError,
+    Stage,
+    get_stage,
+    get_schedule,
+    get_providers,
+)
+from load_shedding.providers import ProviderError, Suburb
 from .const import (
     ATTR_SCHEDULE,
     ATTR_SCHEDULES,
     ATTR_STAGE,
     ATTR_START_TIME,
     ATTR_END_TIME,
+    CONF_MUNICIPALITY,
+    CONF_PROVIDER,
+    CONF_PROVINCE,
+    CONF_STAGE,
+    CONF_SUBURB,
+    CONF_SUBURB_ID,
+    CONF_SUBURBS,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_STAGE,
     DOMAIN,
-    PROVIDER,
-    MAX_FORECAST_DAYS
+    MAX_FORECAST_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,21 +50,22 @@ async def async_setup(hass: HomeAssistant, config: Config):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
-    suburb = Suburb(
-        id=entry.data.get("suburb_id"),
-        name=entry.data.get("suburb"),
-        municipality=entry.data.get("municipality"),
-        province=entry.data.get("province"),
-    )
+    provider = load_provider(entry.data.get(CONF_STAGE, {}).get(CONF_PROVIDER))
+    stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
 
-    stage_coordinator = LoadSheddingStageUpdateCoordinator(hass)
-
-    schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass)
-    schedule_coordinator.add_suburb(suburb)
+    schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass, provider)
+    for suburb_conf in entry.data.get(CONF_SUBURBS, {}):
+        suburb = Suburb(
+            id=suburb_conf.get(CONF_SUBURB_ID),
+            name=suburb_conf.get(CONF_SUBURB),
+            municipality=suburb_conf.get(CONF_MUNICIPALITY),
+            province=suburb_conf.get(CONF_PROVINCE),
+        )
+        schedule_coordinator.add_suburb(suburb)
 
     hass.data[DOMAIN] = {
         ATTR_STAGE: stage_coordinator,
-        ATTR_SCHEDULE: schedule_coordinator
+        ATTR_SCHEDULE: schedule_coordinator,
     }
 
     await stage_coordinator.async_config_entry_first_refresh()
@@ -97,11 +110,11 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     """Class to manage fetching LoadShedding stage from Provider."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, provider: Provider) -> None:
         """Initialize."""
         self.hass = hass
         # TODO: Make providers selectable from config flow once more are available.
-        self.provider = PROVIDER()
+        self.provider = provider
         self.name = f"{DOMAIN}_{ATTR_STAGE}"
         super().__init__(
             self.hass, _LOGGER, name=self.name, update_method=self.async_update_stage
@@ -115,7 +128,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 self.provider,
             )
         except (ProviderError, StageError, Exception) as e:
-            _LOGGER.error(f"{e}")
+            _LOGGER.error("Unable to get stage", exc_info=True)
             return self.data
         else:
             if stage in [Stage.UNKNOWN]:
@@ -127,10 +140,10 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     """Class to manage fetching LoadShedding schedule from Provider."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, provider: Provider) -> None:
         """Initialize."""
         self.hass = hass
-        self.provider = PROVIDER()
+        self.provider = provider
         self.suburbs: list[Suburb] = []
         self.name = f"{DOMAIN}_{ATTR_SCHEDULE}"
         super().__init__(
@@ -144,7 +157,9 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
     async def async_update_schedule(self) -> None:
         """Retrieve schedule data."""
         stage: Stage = None
-        stage_coordinator: LoadSheddingStageUpdateCoordinator = self.hass.data.get(DOMAIN, {}).get(ATTR_STAGE)
+        stage_coordinator: LoadSheddingStageUpdateCoordinator = self.hass.data.get(
+            DOMAIN, {}
+        ).get(ATTR_STAGE)
         if stage_coordinator.data:
             stage = Stage(stage_coordinator.data.get(ATTR_STAGE))
 
@@ -158,7 +173,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 schedules[suburb.id] = {}
                 data = await self.async_get_suburb_data(suburb, forecast_stage)
             except UpdateFailed as e:
-                _LOGGER.error(f"{e}")
+                _LOGGER.error(f"Unable to get suburb data", exc_info=True)
                 continue
             else:
                 schedules[suburb.id] = data
@@ -176,9 +191,11 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 stage,
             )
         except (ProviderError, StageError) as e:
-            raise UpdateFailed(f"{e}")
+            _LOGGER.error(f"Unknown error", exc_info=True)
+            raise UpdateFailed(f"unable to get schedule")
         except Exception as e:
-            raise UpdateFailed(f"{e}")
+            _LOGGER.error(f"Unknown error", exc_info=True)
+            raise UpdateFailed(f"unable to get schedule")
         else:
             data = []
             now = datetime.now(timezone.utc)
@@ -192,9 +209,20 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 if end_time < now:
                     continue
 
-                data.append({
-                    ATTR_START_TIME: str(start_time.isoformat()),
-                    ATTR_END_TIME: str(end_time.isoformat()),
-                })
+                data.append(
+                    {
+                        ATTR_START_TIME: str(start_time.isoformat()),
+                        ATTR_END_TIME: str(end_time.isoformat()),
+                    }
+                )
 
             return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: data}}
+
+
+def load_provider(name: str) -> Provider:
+    providers = get_providers()
+    for p in providers:
+        if f"{p.__class__.__module__}.{p.__class__.__name__}" == name:
+            return p
+
+    return Exception(f"No provider found: {name}")
