@@ -1,10 +1,13 @@
 """Support for the LoadShedding service."""
 from __future__ import annotations
-
 import logging
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
+
+from load_shedding import Stage
+from load_shedding.providers import Area
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
@@ -25,8 +28,6 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from load_shedding import Stage
-from load_shedding.providers import Suburb
 from . import LoadSheddingStageUpdateCoordinator, LoadSheddingScheduleUpdateCoordinator
 from .const import (
     API,
@@ -41,9 +42,9 @@ from .const import (
     ATTRIBUTION,
     CONF_MUNICIPALITY,
     CONF_PROVINCE,
-    CONF_SUBURB,
-    CONF_SUBURB_ID,
-    CONF_SUBURBS,
+    CONF_AREA,
+    CONF_AREA_ID,
+    CONF_AREAS,
     DOMAIN,
     NAME,
     MANUFACTURER,
@@ -57,28 +58,25 @@ async def async_setup_entry(
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
     coordinators = hass.data.get(DOMAIN, {})
-    entity_registry = hass.data.get("entity_registry", {})
     entities: list[Entity] = []
 
     stage_coordinator: LoadSheddingStageUpdateCoordinator = coordinators.get(ATTR_STAGE)
     stage_entity = LoadSheddingStageSensorEntity(stage_coordinator)
-    # Avoid registering the stage sensor entity more than
-    # if not entity_registry.entities.data.get("sensor.load_shedding_stage"):
     entities.append(stage_entity)
 
     schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = coordinators.get(
         ATTR_SCHEDULE
     )
 
-    for data in entry.data.get(CONF_SUBURBS):
-        suburb = Suburb(
-            id=data.get(CONF_SUBURB_ID),
-            name=data.get(CONF_SUBURB),
+    for data in entry.data.get(CONF_AREAS):
+        area = Area(
+            id=data.get(CONF_AREA_ID),
+            name=data.get(CONF_AREA),
             municipality=data.get(CONF_MUNICIPALITY),
             province=data.get(CONF_PROVINCE),
         )
-        suburb_entity = LoadSheddingScheduleSensorEntity(schedule_coordinator, suburb)
-        entities.append(suburb_entity)
+        area_entity = LoadSheddingScheduleSensorEntity(schedule_coordinator, area)
+        entities.append(area_entity)
 
     async_add_entities(entities)
 
@@ -153,16 +151,16 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
     coordinator: LoadSheddingScheduleUpdateCoordinator
 
     def __init__(
-        self, coordinator: LoadSheddingScheduleUpdateCoordinator, suburb: Suburb
+        self, coordinator: LoadSheddingScheduleUpdateCoordinator, area: Area
     ) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self.suburb = suburb
+        self.area = area
 
         description = LoadSheddingSensorDescription(
-            key=f"{DOMAIN} schedule {suburb.id}",
+            key=f"{DOMAIN} schedule {area.id}",
             icon="mdi:calendar",
-            name=f"{DOMAIN} schedule {suburb.name}",
+            name=f"{DOMAIN} schedule {area.name}",
             entity_registry_enabled_default=True,
         )
 
@@ -172,8 +170,8 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         self._attrs = {
             ATTR_ATTRIBUTION: ATTRIBUTION.format(provider=coordinator.provider.name)
         }
-        self._attr_name = f"{NAME} {suburb.name}"
-        self._attr_unique_id = f"{suburb.id}"
+        self._attr_name = f"{NAME} {area.name}"
+        self._attr_unique_id = f"{area.id}"
 
     @property
     def native_value(self) -> StateType:
@@ -186,11 +184,11 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             return self._state
 
         schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        suburb_data = schedules.get(self.suburb.id, [])
-        if not suburb_data:
+        area_data = schedules.get(self.area.id, [])
+        if not area_data:
             return self._state
 
-        schedule = suburb_data.get(ATTR_SCHEDULE, {})
+        schedule = area_data.get(ATTR_SCHEDULE, {})
 
         self._state = cast(StateType, STATE_OFF)
         now = datetime.now(timezone.utc)
@@ -219,12 +217,12 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             return self._attrs
 
         schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        suburb_data = schedules.get(self.suburb.id, [])
-        if not suburb_data:
+        area_data = schedules.get(self.area.id, [])
+        if not area_data:
             return self._attrs
 
-        stage = suburb_data.get(ATTR_STAGE, Stage.UNKNOWN)
-        schedule = suburb_data.get(ATTR_SCHEDULE, {})
+        stage = area_data.get(ATTR_STAGE, Stage.UNKNOWN)
+        schedule = area_data.get(ATTR_SCHEDULE, {})
 
         now = datetime.now(timezone.utc)
         ends_at = datetime.fromisoformat(schedule[0].get(ATTR_END_TIME))

@@ -1,28 +1,28 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "Device is already configured",
-            "cannot_connect": "Failed to connect"
-        },
-        "error": {
-            "cannot_connect": "Failed to connect",
-            "no_provider": "No provider selected.",
-            "no_results_found": "No results found.  Try a different suburb with the same schedule.",
-            "provider_error": "Unable to reach Provider.  See Logs for details."
-        },
-        "step": {
-            "search": {
-                "data": {
-                    "provider": "Provider",
-                    "province": "Province",
-                    "results": "Results",
-                    "search": "Search",
-                    "stage": "Stage",
-                    "suburb": "Suburb",
-                    "suburb_id": "Suburb ID"
-                },
-                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the results."
-            }
+  "config": {
+    "step": {
+      "lookup_areas": {
+        "description": "Search your area name, e.g. Milnerton, then select your area ID from the results.",
+        "data": {
+          "provider": "Provider",
+          "province": "Province",
+          "results": "Results",
+          "search": "Search",
+          "stage": "Stage",
+          "area": "Area",
+          "area_id": "Area"
         }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "provider_error": "Unable to reach Provider.  See Logs for details.",
+      "no_results_found": "No results found.  Try searching for a different area with the same schedule as yours or choose a different provider.",
+      "no_provider": "No provider selected."
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
     }
+  }
 }

@@ -8,13 +8,14 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult, RESULT_TYPE_SHOW_PROGRESS_DONE
 
-from load_shedding.load_shedding import Provider, get_providers, search
-from load_shedding.providers import Suburb, ProviderError
+from load_shedding import load_shedding
+
+from load_shedding.providers import Area, ProviderError
 from .const import (
     CONF_PROVIDER,
-    CONF_SUBURBS,
-    CONF_SUBURB,
-    CONF_SUBURB_ID,
+    CONF_AREAS,
+    CONF_AREA_ID,
+    CONF_SEARCH,
     CONF_STAGE,
     DOMAIN,
     NAME,
@@ -23,9 +24,9 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def load_provider(name: str) -> Provider:
+def load_provider(name: str) -> load_shedding.Provider:
     """Load a provider from module name"""
-    providers = get_providers()
+    providers = load_shedding.get_providers()
     for provider in providers:
         if str(provider.__class__) == name:
             return provider
@@ -33,20 +34,23 @@ def load_provider(name: str) -> Provider:
     return Exception(f"No provider found: {name}")
 
 
-def suburb_search(provider: Provider, search_text: str) -> list[Suburb]:
-    """Search a suburb."""
+def get_areas(p: load_shedding.Provider, search_text: str) -> list[Area]:
+    """Search a area."""
     try:
+        provider = p.load()
         _LOGGER.debug("Searching %s for %s", provider.name, search_text)
-        suburbs = search(provider, search_text=search_text, max_results=25)
-        _LOGGER.debug("Found %d results", len(suburbs))
+        areas = load_shedding.get_areas(
+            provider, search_text=search_text, max_results=25
+        )
+        _LOGGER.debug("Found %d results", len(areas))
     except ProviderError:
-        _LOGGER.error("Provider error", exc_info=True)
+        _LOGGER.debug("Provider error", exc_info=True)
         raise
-    except Exception:
-        _LOGGER.error("Unknown exception", exc_info=True)
-        raise
+    except Exception as e:
+        _LOGGER.debug("Unknown exception", exc_info=True)
+        raise ProviderError(e)
     else:
-        return suburbs
+        return areas
 
 
 @config_entries.HANDLERS.register(DOMAIN)
@@ -56,39 +60,39 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self):
-        self.provider: Provider = None
-        self.suburbs: dict = {}
+        self.provider: load_shedding.Provider = None
+        self.areas: dict = {}
 
     async def async_step_user(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
-        return await self.async_step_search(user_input)
+        return await self.async_step_lookup_areas(user_input)
 
-    async def async_step_search(
-            self, user_input: dict[str, Any] | None = None
+    async def async_step_lookup_areas(
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the flow step to search for a suburb."""
+        """Handle the flow step to search for and select an area."""
         errors = {}
         providers = {}
         default_provider = None
-        for provider in get_providers():
+        for provider in load_shedding.get_providers():
             if not default_provider:
-                default_provider = f"{provider.__class__}"
-            providers[f"{provider.__class__}"] = f"{provider.name}"
+                default_provider = provider.value
+            providers[provider.value] = f"{provider}"
 
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_PROVIDER, default=default_provider): vol.In(
                     providers
                 ),
-                vol.Required(CONF_SUBURB): str,
+                vol.Required(CONF_SEARCH): str,
             }
         )
 
         if not user_input:
             return self.async_show_form(
-                step_id="search",
+                step_id="lookup_areas",
                 data_schema=data_schema,
                 errors=errors,
             )
@@ -96,7 +100,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if not user_input.get(CONF_PROVIDER):
             errors["base"] = "no_provider"
             return self.async_show_form(
-                step_id="search",
+                step_id="lookup_areas",
                 data_schema=data_schema,
                 errors=errors,
             )
@@ -106,34 +110,31 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(
                     CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
                 ): vol.In(providers),
-                vol.Required(CONF_SUBURB, default=user_input.get(CONF_SUBURB)): str,
+                vol.Required(CONF_SEARCH, default=user_input.get(CONF_SEARCH)): str,
             }
         )
 
-        search_text = user_input.get(CONF_SUBURB)
-        self.provider = load_provider(user_input.get(CONF_PROVIDER))
-        if not user_input.get(CONF_SUBURB_ID):
+        search_text = user_input.get(CONF_SEARCH)
+        self.provider = load_shedding.Provider(user_input.get(CONF_PROVIDER))
+        if not user_input.get(CONF_AREA_ID):
             try:
                 results = await self.hass.async_add_executor_job(
-                    suburb_search, self.provider, search_text
+                    get_areas, self.provider, search_text
                 )
             except ProviderError:
-                _LOGGER.error("Provider error", exc_info=True)
+                _LOGGER.debug("Provider error", exc_info=True)
                 errors["base"] = "provider_error"
             else:
-                self.suburbs = {}
-                suburb_ids = {}
-                for suburb in results:
-                    if not suburb.total:
-                        continue
+                self.areas = {}
+                area_ids = {}
+                for area in results:
+                    self.areas[area.id] = area
+                    area_ids[
+                        area.id
+                    ] = f"{area.name}, {area.municipality}, {area.province}"
 
-                    self.suburbs[suburb.id] = suburb
-                    suburb_ids[
-                        suburb.id
-                    ] = f"{suburb.name}, {suburb.municipality.name}, {suburb.province}"
-
-                if not self.suburbs:
-                    errors[CONF_SUBURB] = "no_results_found"
+                if not self.areas:
+                    errors[CONF_SEARCH] = "no_results_found"
 
             if not errors:
                 data_schema = vol.Schema(
@@ -142,42 +143,41 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
                         ): vol.In(providers),
                         vol.Required(
-                            CONF_SUBURB, default=user_input.get(CONF_SUBURB)
+                            CONF_SEARCH, default=user_input.get(CONF_SEARCH)
                         ): str,
-                        vol.Optional(CONF_SUBURB_ID): vol.In(suburb_ids),
+                        vol.Optional(CONF_AREA_ID): vol.In(area_ids),
                     }
                 )
 
             return self.async_show_form(
-                step_id="search",
+                step_id="lookup_areas",
                 data_schema=data_schema,
                 errors=errors,
             )
 
-        # Suburb ID selected
-        return await self.async_step_suburb(user_input)
+        return await self.async_step_select_area(user_input)
 
-    async def async_step_suburb(
-            self, user_input: dict[str, Any] | None = None
+    async def async_step_select_area(
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the flow step to create a suburb."""
-        suburb_id = user_input.get(CONF_SUBURB_ID)
-        suburb = self.suburbs.get(suburb_id)
+        """Handle the flow step to create a area."""
+        area_id = user_input.get(CONF_AREA_ID)
+        area = self.areas.get(area_id)
 
-        description = f"{suburb.name}, {suburb.municipality.name}, {suburb.province}"
+        description = f"{area.name}, {area.municipality}, {area.province}"
         data = {
             CONF_STAGE: {
-                "provider": f"{self.provider.__class__.__module__}.{self.provider.__class__.__name__}",
+                "provider": self.provider.value,
             },
-            CONF_SUBURBS: [
+            CONF_AREAS: [
                 {
                     "description": description,
-                    "suburb": suburb.name,
-                    "suburb_id": suburb.id,
-                    "municipality": suburb.municipality.name,
-                    "provider": f"{self.provider.__class__.__module__}.{self.provider.__class__.__name__}",
-                    "province": str(suburb.province),
-                    "province_id": suburb.province.value,
+                    "area": area.name,
+                    "area_id": area.id,
+                    "municipality": area.municipality,
+                    "provider": self.provider.value,
+                    "province": str(area.province),
+                    "province_id": area.province.value,
                 }
             ],
         }
@@ -190,7 +190,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 if self.hass.config_entries.async_update_entry(entry, data=data):
                     await self.hass.config_entries.async_reload(entry.entry_id)
             except Exception:
-                _LOGGER.error("Unknown error", exc_info=True)
+                _LOGGER.debug("Unknown error", exc_info=True)
                 raise
             else:
                 return self.async_abort(reason=RESULT_TYPE_SHOW_PROGRESS_DONE)

@@ -1,24 +1,22 @@
 """The LoadShedding component."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+import logging
+from typing import Any, Dict, List
+
+from load_shedding.load_shedding import (
+    get_schedule,
+    get_stage,
+    Provider,
+)
+from load_shedding.providers import Area, ProviderError, StageError, Stage
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant, Config
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from load_shedding import (
-    Provider,
-    StageError,
-    Stage,
-    get_stage,
-    get_schedule,
-    get_providers,
-)
-from load_shedding.providers import ProviderError, Suburb
 from .const import (
     ATTR_SCHEDULE,
     ATTR_SCHEDULES,
@@ -29,9 +27,9 @@ from .const import (
     CONF_PROVIDER,
     CONF_PROVINCE,
     CONF_STAGE,
-    CONF_SUBURB,
-    CONF_SUBURB_ID,
-    CONF_SUBURBS,
+    CONF_AREA,
+    CONF_AREA_ID,
+    CONF_AREAS,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_STAGE,
     DOMAIN,
@@ -50,18 +48,18 @@ async def async_setup(hass: HomeAssistant, config: Config):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
-    provider = load_provider(entry.data.get(CONF_STAGE, {}).get(CONF_PROVIDER))
+    provider = Provider(entry.data.get(CONF_STAGE, {}).get(CONF_PROVIDER)).load()
     stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
 
     schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass, provider)
-    for suburb_conf in entry.data.get(CONF_SUBURBS, {}):
-        suburb = Suburb(
-            id=suburb_conf.get(CONF_SUBURB_ID),
-            name=suburb_conf.get(CONF_SUBURB),
-            municipality=suburb_conf.get(CONF_MUNICIPALITY),
-            province=suburb_conf.get(CONF_PROVINCE),
+    for area_conf in entry.data.get(CONF_AREAS, {}):
+        area = Area(
+            id=area_conf.get(CONF_AREA_ID),
+            name=area_conf.get(CONF_AREA),
+            municipality=area_conf.get(CONF_MUNICIPALITY),
+            province=area_conf.get(CONF_PROVINCE),
         )
-        schedule_coordinator.add_suburb(suburb)
+        schedule_coordinator.add_area(area)
 
     hass.data[DOMAIN] = {
         ATTR_STAGE: stage_coordinator,
@@ -128,7 +126,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 self.provider,
             )
         except (ProviderError, StageError, Exception) as e:
-            _LOGGER.error("Unable to get stage", exc_info=True)
+            _LOGGER.debug("Unable to get stage", exc_info=True)
             return self.data
         else:
             if stage in [Stage.UNKNOWN]:
@@ -144,15 +142,15 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
         """Initialize."""
         self.hass = hass
         self.provider = provider
-        self.suburbs: list[Suburb] = []
+        self.areas: list[Area] = []
         self.name = f"{DOMAIN}_{ATTR_SCHEDULE}"
         super().__init__(
             self.hass, _LOGGER, name=self.name, update_method=self.async_update_schedule
         )
 
-    def add_suburb(self, suburb: Suburb = None) -> None:
-        """Add a suburb to update."""
-        self.suburbs.append(suburb)
+    def add_area(self, area: Area = None) -> None:
+        """Add a area to update."""
+        self.areas.append(area)
 
     async def async_update_schedule(self) -> None:
         """Retrieve schedule data."""
@@ -168,40 +166,40 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
             forecast_stage = DEFAULT_STAGE
 
         schedules = {}
-        for suburb in self.suburbs:
+        for area in self.areas:
             try:
-                schedules[suburb.id] = {}
-                data = await self.async_get_suburb_data(suburb, forecast_stage)
+                schedules[area.id] = {}
+                data = await self.async_get_area_data(area, forecast_stage)
             except UpdateFailed as e:
-                _LOGGER.error(f"Unable to get suburb data", exc_info=True)
+                _LOGGER.debug("Unable to get area data", exc_info=True)
                 continue
             else:
-                schedules[suburb.id] = data
+                schedules[area.id] = data
 
         return {**{ATTR_STAGE: stage, ATTR_SCHEDULES: schedules}}
 
-    async def async_get_suburb_data(self, suburb: Suburb, stage: Stage = None) -> Dict:
-        """Retrieve schedule for given suburb and stage."""
+    async def async_get_area_data(self, area: Area, stage: Stage = None) -> Dict:
+        """Retrieve schedule for given area and stage."""
         try:
             schedule = await self.hass.async_add_executor_job(
                 get_schedule,
                 self.provider,
-                suburb.province,
-                suburb,
+                area.province,
+                area,
                 stage,
             )
         except (ProviderError, StageError) as e:
-            _LOGGER.error(f"Unknown error", exc_info=True)
-            raise UpdateFailed(f"unable to get schedule")
+            _LOGGER.debug("Unknown error", exc_info=True)
+            raise UpdateFailed("Unable to get schedule")
         except Exception as e:
-            _LOGGER.error(f"Unknown error", exc_info=True)
-            raise UpdateFailed(f"unable to get schedule")
+            _LOGGER.debug("Unknown error", exc_info=True)
+            raise UpdateFailed("Unable to get schedule")
         else:
             data = []
             now = datetime.now(timezone.utc)
             for s in schedule:
-                start_time = datetime.fromisoformat(s[0])
-                end_time = datetime.fromisoformat(s[1])
+                start_time = s[0]
+                end_time = s[1]
 
                 if start_time > now + timedelta(days=MAX_FORECAST_DAYS):
                     continue
@@ -217,12 +215,3 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 )
 
             return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: data}}
-
-
-def load_provider(name: str) -> Provider:
-    providers = get_providers()
-    for p in providers:
-        if f"{p.__class__.__module__}.{p.__class__.__name__}" == name:
-            return p
-
-    return Exception(f"No provider found: {name}")

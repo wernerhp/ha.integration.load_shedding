@@ -6,20 +6,22 @@
         },
         "error": {
             "cannot_connect": "Failed to connect",
-            "no_results_found": "No results found.  Try a different suburb with the same schedule.",
+            "no_provider": "No provider selected.",
+            "no_results_found": "No results found.  Try searching for a different area with the same schedule as yours or choose a different provider.",
             "provider_error": "Unable to reach Provider.  See Logs for details."
         },
         "step": {
-            "search": {
+            "lookup_areas": {
                 "data": {
+                    "area": "Area",
+                    "area_id": "Area",
                     "provider": "Provider",
                     "province": "Province",
                     "results": "Results",
                     "search": "Search",
-                    "suburb": "Suburb",
-                    "suburb_id": "Suburb ID"
+                    "stage": "Stage"
                 },
-                "description": "Search your suburb name, e.g. Milnerton, then select your suburb ID from the dropdown."
+                "description": "Search your area name, e.g. Milnerton, then select your area ID from the results."
             }
         }
     }
