@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 from load_shedding import Stage
-from load_shedding.providers import Area
+from load_shedding.providers import Area, Province
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
@@ -41,13 +41,12 @@ from .const import (
     ATTR_STAGE,
     ATTRIBUTION,
     CONF_MUNICIPALITY,
-    CONF_PROVINCE,
     CONF_AREA,
     CONF_AREA_ID,
     CONF_AREAS,
     DOMAIN,
     NAME,
-    MANUFACTURER,
+    MANUFACTURER, CONF_PROVINCE_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ async def async_setup_entry(
             id=data.get(CONF_AREA_ID),
             name=data.get(CONF_AREA),
             municipality=data.get(CONF_MUNICIPALITY),
-            province=data.get(CONF_PROVINCE),
+            province=Province(data.get(CONF_PROVINCE_ID)),
         )
         area_entity = LoadSheddingScheduleSensorEntity(schedule_coordinator, area)
         entities.append(area_entity)
@@ -84,8 +83,6 @@ async def async_setup_entry(
 @dataclass
 class LoadSheddingSensorDescription(SensorEntityDescription):
     """Class describing LoadShedding sensor entities."""
-
-    pass
 
 
 class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):

@@ -1,18 +1,18 @@
 """The LoadShedding component."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import logging
-from typing import Any, Dict
-
-from load_shedding import get_schedule, get_stage, Provider
-from load_shedding.providers import Area, ProviderError, StageError, Stage
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import CoreState, HomeAssistant, Config
+from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.helpers import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from load_shedding import get_schedule, get_stage, Provider
+from load_shedding.providers import Area, Province, ProviderError, StageError, Stage
 from .const import (
     ATTR_SCHEDULE,
     ATTR_SCHEDULES,
@@ -22,6 +22,7 @@ from .const import (
     CONF_MUNICIPALITY,
     CONF_PROVIDER,
     CONF_PROVINCE,
+    CONF_PROVINCE_ID,
     CONF_STAGE,
     CONF_AREA,
     CONF_AREA_ID,
@@ -37,7 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
 
 
-async def async_setup(hass: HomeAssistant, config: Config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up this integration using YAML is not supported."""
     return True
 
@@ -53,7 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             id=data.get(CONF_AREA_ID),
             name=data.get(CONF_AREA),
             municipality=data.get(CONF_MUNICIPALITY),
-            province=data.get(CONF_PROVINCE),
+            province=Province(data.get(CONF_PROVINCE_ID)),
         )
         schedule_coordinator.add_area(area)
 
@@ -101,7 +102,7 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding stage from Provider."""
 
     def __init__(self, hass: HomeAssistant, provider: Provider) -> None:
@@ -114,15 +115,18 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self.hass, _LOGGER, name=self.name, update_method=self.async_update_stage
         )
 
-    async def async_update_stage(self) -> Dict:
+    async def async_update_stage(self) -> dict:
         """Retrieve latest stage."""
         try:
             stage = await self.hass.async_add_executor_job(
                 get_stage,
                 self.provider,
             )
-        except (ProviderError, StageError, Exception) as e:
-            _LOGGER.debug("Unable to get stage %s", e, exc_info=True)
+        except (ProviderError, StageError) as err:
+            _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
+            return self.data
+        except Exception as err:
+            _LOGGER.debug("Unknown error: %s", err, exc_info=True)
             return self.data
         else:
             if stage in [Stage.UNKNOWN]:
@@ -131,7 +135,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return {**{ATTR_STAGE: stage}}
 
 
-class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding schedule from Provider."""
 
     def __init__(self, hass: HomeAssistant, provider: Provider) -> None:
@@ -148,7 +152,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
         """Add a area to update."""
         self.areas.append(area)
 
-    async def async_update_schedule(self) -> Dict:
+    async def async_update_schedule(self) -> dict:
         """Retrieve schedule data."""
         stage: Stage = Stage.UNKNOWN
         stage_coordinator: LoadSheddingStageUpdateCoordinator = self.hass.data.get(
@@ -166,30 +170,29 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
             try:
                 schedules[area.id] = {}
                 data = await self.async_get_area_data(area, forecast_stage)
-            except UpdateFailed as e:
-                _LOGGER.debug("Unable to get area data: %s", e, exc_info=True)
+            except UpdateFailed as err:
+                _LOGGER.debug("Unable to get area data: %s", err, exc_info=True)
                 continue
             else:
                 schedules[area.id] = data
 
         return {**{ATTR_STAGE: stage, ATTR_SCHEDULES: schedules}}
 
-    async def async_get_area_data(self, area: Area, stage: Stage = None) -> Dict:
+    async def async_get_area_data(self, area: Area, stage: Stage = None) -> dict:
         """Retrieve schedule for given area and stage."""
         try:
             schedule = await self.hass.async_add_executor_job(
                 get_schedule,
                 self.provider,
-                area.province,
                 area,
                 stage,
             )
-        except (ProviderError, StageError) as e:
-            _LOGGER.debug("Unknown error", exc_info=True)
-            raise UpdateFailed("Unable to get schedule: %s", e)
-        except Exception as e:
-            _LOGGER.debug("Unknown error", exc_info=True)
-            raise UpdateFailed("Unable to get schedule: %s", e)
+        except (ProviderError, StageError) as err:
+            _LOGGER.debug("Unknown error: %s", err, exc_info=True)
+            raise UpdateFailed("Unable to get schedule") from err
+        except Exception as err:
+            _LOGGER.debug("Unknown error: %s", err, exc_info=True)
+            raise UpdateFailed("Unable to get schedule") from err
         else:
             data = []
             now = datetime.now(timezone.utc)

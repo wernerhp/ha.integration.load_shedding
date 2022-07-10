@@ -7,7 +7,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_DESCRIPTION
-from homeassistant.data_entry_flow import FlowResult, RESULT_TYPE_SHOW_PROGRESS_DONE
+from homeassistant.data_entry_flow import FlowResult, FlowResultType
 
 from load_shedding import get_areas, Provider
 from load_shedding.providers import ProviderError
@@ -15,13 +15,12 @@ from .const import (
     CONF_AREA,
     CONF_AREAS,
     CONF_AREA_ID,
-    CONF_MUNICIPALITY,
-    CONF_PROVINCE,
+    CONF_PROVINCE_ID,
     CONF_PROVIDER,
     CONF_SEARCH,
     CONF_STAGE,
     DOMAIN,
-    NAME, CONF_PROVIDER_ID,
+    NAME,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -103,7 +102,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             area_ids = {}
             try:
                 results = await self.hass.async_add_executor_job(
-                    get_areas, self.provider(), search_text, max_results=25
+                    get_areas, self.provider(), search_text
                 )
             except ProviderError:
                 _LOGGER.debug("Provider error", exc_info=True)
@@ -157,10 +156,8 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_DESCRIPTION: description,
                     CONF_AREA: area.name,
                     CONF_AREA_ID: area.id,
-                    CONF_MUNICIPALITY: area.municipality,
                     CONF_PROVIDER: self.provider.value,
-                    CONF_PROVINCE: str(area.province),
-                    CONF_PROVIDER_ID: area.province.value,
+                    CONF_PROVINCE_ID: area.province.value,
                 }
             ],
         }
@@ -176,10 +173,10 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.debug("Unknown error", exc_info=True)
                 raise
             else:
-                return self.async_abort(reason=RESULT_TYPE_SHOW_PROGRESS_DONE)
+                return self.async_abort(reason=FlowResultType.SHOW_PROGRESS_DONE)
 
         return self.async_create_entry(
-            title=f"{NAME}",
+            title=NAME,
             data=data,
             description="Load Shedding configuration",
         )
