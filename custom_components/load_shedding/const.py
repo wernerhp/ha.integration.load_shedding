@@ -18,6 +18,7 @@ DEFAULT_SCAN_INTERVAL = 61  # seconds
 CONF_MUNICIPALITY: Final = "municipality"
 CONF_OPTIONS: Final = "options"
 CONF_PROVIDER: Final = "provider"
+CONF_PROVIDER_ID: Final = "provider_id"
 CONF_PROVINCE: Final = "province"
 CONF_PROVINCE_ID: Final = "province_id"
 CONF_SCHEDULE: Final = "schedule"

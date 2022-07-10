@@ -6,51 +6,34 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.const import CONF_DESCRIPTION
 from homeassistant.data_entry_flow import FlowResult, RESULT_TYPE_SHOW_PROGRESS_DONE
 
-from load_shedding import load_shedding
-
-from load_shedding.providers import Area, ProviderError
+from load_shedding import get_areas, Provider
+from load_shedding.providers import ProviderError
 from .const import (
-    CONF_PROVIDER,
+    CONF_AREA,
     CONF_AREAS,
     CONF_AREA_ID,
+    CONF_MUNICIPALITY,
+    CONF_PROVINCE,
+    CONF_PROVIDER,
     CONF_SEARCH,
     CONF_STAGE,
     DOMAIN,
-    NAME,
+    NAME, CONF_PROVIDER_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def load_provider(name: str) -> load_shedding.Provider:
+def load_provider(name: str) -> Provider | Exception:
     """Load a provider from module name"""
-    providers = load_shedding.get_providers()
-    for provider in providers:
+    for provider in list(Provider):
         if str(provider.__class__) == name:
             return provider
 
     return Exception(f"No provider found: {name}")
-
-
-def get_areas(p: load_shedding.Provider, search_text: str) -> list[Area]:
-    """Search a area."""
-    try:
-        provider = p.load()
-        _LOGGER.debug("Searching %s for %s", provider.name, search_text)
-        areas = load_shedding.get_areas(
-            provider, search_text=search_text, max_results=25
-        )
-        _LOGGER.debug("Found %d results", len(areas))
-    except ProviderError:
-        _LOGGER.debug("Provider error", exc_info=True)
-        raise
-    except Exception as e:
-        _LOGGER.debug("Unknown exception", exc_info=True)
-        raise ProviderError(e)
-    else:
-        return areas
 
 
 @config_entries.HANDLERS.register(DOMAIN)
@@ -60,23 +43,23 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self):
-        self.provider: load_shedding.Provider = None
+        self.provider: Provider = Provider.ESKOM
         self.areas: dict = {}
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
+            self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
         return await self.async_step_lookup_areas(user_input)
 
     async def async_step_lookup_areas(
-        self, user_input: dict[str, Any] | None = None
+            self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to search for and select an area."""
         errors = {}
         providers = {}
         default_provider = None
-        for provider in load_shedding.get_providers():
+        for provider in list(Provider):
             if not default_provider:
                 default_provider = provider.value
             providers[provider.value] = f"{provider}"
@@ -115,18 +98,18 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         search_text = user_input.get(CONF_SEARCH)
-        self.provider = load_shedding.Provider(user_input.get(CONF_PROVIDER))
+        self.provider = Provider(user_input.get(CONF_PROVIDER))
         if not user_input.get(CONF_AREA_ID):
+            area_ids = {}
             try:
                 results = await self.hass.async_add_executor_job(
-                    get_areas, self.provider, search_text
+                    get_areas, self.provider(), search_text, max_results=25
                 )
             except ProviderError:
                 _LOGGER.debug("Provider error", exc_info=True)
                 errors["base"] = "provider_error"
             else:
                 self.areas = {}
-                area_ids = {}
                 for area in results:
                     self.areas[area.id] = area
                     area_ids[
@@ -158,7 +141,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_select_area(user_input)
 
     async def async_step_select_area(
-        self, user_input: dict[str, Any] | None = None
+            self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to create a area."""
         area_id = user_input.get(CONF_AREA_ID)
@@ -167,23 +150,23 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         description = f"{area.name}, {area.municipality}, {area.province}"
         data = {
             CONF_STAGE: {
-                "provider": self.provider.value,
+                CONF_PROVIDER: self.provider.value,
             },
             CONF_AREAS: [
                 {
-                    "description": description,
-                    "area": area.name,
-                    "area_id": area.id,
-                    "municipality": area.municipality,
-                    "provider": self.provider.value,
-                    "province": str(area.province),
-                    "province_id": area.province.value,
+                    CONF_DESCRIPTION: description,
+                    CONF_AREA: area.name,
+                    CONF_AREA_ID: area.id,
+                    CONF_MUNICIPALITY: area.municipality,
+                    CONF_PROVIDER: self.provider.value,
+                    CONF_PROVINCE: str(area.province),
+                    CONF_PROVIDER_ID: area.province.value,
                 }
             ],
         }
         _LOGGER.debug("Config entry: %s", data)
 
-        entry = await self.async_set_unique_id(f"{DOMAIN}")
+        entry = await self.async_set_unique_id(DOMAIN)
         if entry:
             try:
                 _LOGGER.debug("Entry exists: %s", entry)

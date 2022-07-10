@@ -3,13 +3,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from load_shedding.load_shedding import (
-    get_schedule,
-    get_stage,
-    Provider,
-)
+from load_shedding import get_schedule, get_stage, Provider
 from load_shedding.providers import Area, ProviderError, StageError, Stage
 
 from homeassistant.config_entries import ConfigEntry
@@ -48,16 +44,16 @@ async def async_setup(hass: HomeAssistant, config: Config):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
-    provider = Provider(entry.data.get(CONF_STAGE, {}).get(CONF_PROVIDER)).load()
+    provider = Provider(entry.data.get(CONF_STAGE, {}).get(CONF_PROVIDER))()
     stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
 
     schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass, provider)
-    for area_conf in entry.data.get(CONF_AREAS, {}):
+    for data in entry.data.get(CONF_AREAS, {}):
         area = Area(
-            id=area_conf.get(CONF_AREA_ID),
-            name=area_conf.get(CONF_AREA),
-            municipality=area_conf.get(CONF_MUNICIPALITY),
-            province=area_conf.get(CONF_PROVINCE),
+            id=data.get(CONF_AREA_ID),
+            name=data.get(CONF_AREA),
+            municipality=data.get(CONF_MUNICIPALITY),
+            province=data.get(CONF_PROVINCE),
         )
         schedule_coordinator.add_area(area)
 
@@ -111,14 +107,14 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, provider: Provider) -> None:
         """Initialize."""
         self.hass = hass
-        # TODO: Make providers selectable from config flow once more are available.
+
         self.provider = provider
         self.name = f"{DOMAIN}_{ATTR_STAGE}"
         super().__init__(
             self.hass, _LOGGER, name=self.name, update_method=self.async_update_stage
         )
 
-    async def async_update_stage(self) -> None:
+    async def async_update_stage(self) -> Dict:
         """Retrieve latest stage."""
         try:
             stage = await self.hass.async_add_executor_job(
@@ -126,7 +122,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 self.provider,
             )
         except (ProviderError, StageError, Exception) as e:
-            _LOGGER.debug("Unable to get stage", exc_info=True)
+            _LOGGER.debug("Unable to get stage %s", e, exc_info=True)
             return self.data
         else:
             if stage in [Stage.UNKNOWN]:
@@ -152,9 +148,9 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
         """Add a area to update."""
         self.areas.append(area)
 
-    async def async_update_schedule(self) -> None:
+    async def async_update_schedule(self) -> Dict:
         """Retrieve schedule data."""
-        stage: Stage = None
+        stage: Stage = Stage.UNKNOWN
         stage_coordinator: LoadSheddingStageUpdateCoordinator = self.hass.data.get(
             DOMAIN, {}
         ).get(ATTR_STAGE)
@@ -171,7 +167,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
                 schedules[area.id] = {}
                 data = await self.async_get_area_data(area, forecast_stage)
             except UpdateFailed as e:
-                _LOGGER.debug("Unable to get area data", exc_info=True)
+                _LOGGER.debug("Unable to get area data: %s", e, exc_info=True)
                 continue
             else:
                 schedules[area.id] = data
@@ -190,10 +186,10 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]
             )
         except (ProviderError, StageError) as e:
             _LOGGER.debug("Unknown error", exc_info=True)
-            raise UpdateFailed("Unable to get schedule")
+            raise UpdateFailed("Unable to get schedule: %s", e)
         except Exception as e:
             _LOGGER.debug("Unknown error", exc_info=True)
-            raise UpdateFailed("Unable to get schedule")
+            raise UpdateFailed("Unable to get schedule: %s", e)
         else:
             data = []
             now = datetime.now(timezone.utc)

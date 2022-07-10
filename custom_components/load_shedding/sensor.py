@@ -68,7 +68,7 @@ async def async_setup_entry(
         ATTR_SCHEDULE
     )
 
-    for data in entry.data.get(CONF_AREAS):
+    for data in entry.data.get(CONF_AREAS, {}):
         area = Area(
             id=data.get(CONF_AREA_ID),
             name=data.get(CONF_AREA),
@@ -184,7 +184,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             return self._state
 
         schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        area_data = schedules.get(self.area.id, [])
+        area_data = schedules.get(self.area.id, {})
         if not area_data:
             return self._state
 
@@ -217,7 +217,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             return self._attrs
 
         schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        area_data = schedules.get(self.area.id, [])
+        area_data = schedules.get(self.area.id, {})
         if not area_data:
             return self._attrs
 
