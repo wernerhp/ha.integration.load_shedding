@@ -39,7 +39,7 @@ def load_provider(name: str) -> Provider | Exception:
 class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for LoadShedding."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self):
         self.provider: Provider = Provider.ESKOM
