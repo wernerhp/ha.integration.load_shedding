@@ -6,13 +6,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED, CONF_DESCRIPTION
+from homeassistant.const import (
+    CONF_SCAN_INTERVAL,
+    EVENT_HOMEASSISTANT_STARTED,
+    CONF_DESCRIPTION,
+)
 from homeassistant.core import CoreState, HomeAssistant
-from homeassistant.exceptions import IntegrationError
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from load_shedding import get_schedule, get_stage, Provider
+from load_shedding import get_schedule, get_stage, get_stage_forecast, Provider
 from load_shedding.providers import Area, Province, ProviderError, StageError, Stage
 from .const import (
     ATTR_SCHEDULE,
@@ -22,7 +25,6 @@ from .const import (
     ATTR_END_TIME,
     CONF_MUNICIPALITY,
     CONF_PROVIDER,
-    CONF_PROVINCE,
     CONF_PROVINCE_ID,
     CONF_STAGE,
     CONF_AREA,
@@ -32,6 +34,7 @@ from .const import (
     DEFAULT_STAGE,
     DOMAIN,
     MAX_FORECAST_DAYS,
+    ATTR_STAGE_FORECAST,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,34 +44,6 @@ PLATFORMS = ["sensor"]
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up this integration using YAML is not supported."""
-    return True
-
-
-async def async_migrate_entry(hass, config_entry: ConfigEntry):
-    """Migrate old entry."""
-    _LOGGER.debug("Migrating from version %s", config_entry.version)
-
-    if config_entry.version == 1:
-        old = {**config_entry.data}
-        suburbs = old.get("suburbs")
-        new = {
-            CONF_STAGE: {
-                CONF_PROVIDER: Provider.ESKOM.value,
-            },
-            CONF_AREAS: [
-                {
-                    CONF_DESCRIPTION: suburbs.get(CONF_DESCRIPTION),
-                    CONF_AREA: suburbs.get("suburb"),
-                    CONF_AREA_ID: suburbs.get("suburb_id"),
-                    CONF_PROVIDER: Provider.ESKOM.value,
-                    CONF_PROVINCE_ID: suburbs.get(CONF_PROVINCE_ID),
-                }
-            ],
-        }
-        config_entry.version = 2
-        hass.config_entries.async_update_entry(config_entry, data=new)
-
-    _LOGGER.info("Migration to version %s successful", config_entry.version)
     return True
 
 
@@ -140,12 +115,17 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.provider = provider
         self.name = f"{DOMAIN}_{ATTR_STAGE}"
+        self.data = {}
         super().__init__(
             self.hass, _LOGGER, name=self.name, update_method=self.async_update_stage
         )
 
     async def async_update_stage(self) -> dict:
         """Retrieve latest stage."""
+        if not self.data:
+            self.data = {}
+
+        stage = Stage.UNKNOWN
         try:
             stage = await self.hass.async_add_executor_job(
                 get_stage,
@@ -153,15 +133,51 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except (ProviderError, StageError) as err:
             _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
-            return self.data
         except Exception as err:
             _LOGGER.debug("Unknown error: %s", err, exc_info=True)
-            return self.data
-        else:
+        finally:
             if stage in [Stage.UNKNOWN]:
+                stage = self.data.get(ATTR_STAGE, Stage.UNKNOWN)
+            self.data[ATTR_STAGE] = stage
+
+        try:
+            stage_forecast = []
+            stage_forecast = await self.hass.async_add_executor_job(
+                get_stage_forecast,
+                self.provider,
+            )
+        except (ProviderError, StageError) as err:
+            _LOGGER.debug("Unable to get stage forecast %s", err, exc_info=True)
+        except Exception as err:
+            _LOGGER.debug("Unknown error: %s", err, exc_info=True)
+        finally:
+            if not stage_forecast:
                 return self.data
 
-            return {**{ATTR_STAGE: stage}}
+            data = []
+            now = datetime.now(timezone.utc)
+            for s in stage_forecast:
+                stage = s.get(ATTR_STAGE)
+                start_time = s.get(ATTR_START_TIME)
+                end_time = s.get(ATTR_END_TIME)
+
+                if start_time > now + timedelta(days=MAX_FORECAST_DAYS):
+                    continue
+
+                if end_time < now:
+                    continue
+
+                data.append(
+                    {
+                        ATTR_STAGE: stage,
+                        ATTR_START_TIME: str(start_time.isoformat()),
+                        ATTR_END_TIME: str(end_time.isoformat()),
+                    }
+                )
+
+            self.data[ATTR_STAGE_FORECAST] = data
+
+        return self.data
 
 
 class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -245,7 +261,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
             return {**{ATTR_STAGE: stage, ATTR_SCHEDULE: data}}
 
 
-async def async_migrate_entry(hass, config_entry: ConfigEntry):
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Migrate old entry."""
     _LOGGER.debug("Migrating from version %s", config_entry.version)
 

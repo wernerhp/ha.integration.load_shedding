@@ -46,7 +46,7 @@ from .const import (
     CONF_AREAS,
     DOMAIN,
     NAME,
-    MANUFACTURER, CONF_PROVINCE_ID,
+    MANUFACTURER, CONF_PROVINCE_ID, ATTR_NEXT_START, ATTR_NEXT_END, ATTR_NEXT_STAGE, ATTR_FORECAST, ATTR_STAGE_FORECAST,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -134,7 +134,31 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         """Return the state attributes."""
         if not self.coordinator.data:
             return self._attrs
+
+        stage = self.coordinator.data.get(ATTR_STAGE, Stage.UNKNOWN)
+        if stage in [Stage.UNKNOWN]:
+            return self._attrs
+
+        data = {
+            ATTR_STAGE: stage
+        }
+
+        forecast = self.coordinator.data.get(ATTR_STAGE_FORECAST, {})
+        if not forecast:
+            return self._attrs
+
+        if len(forecast) > 1:
+            next = forecast[1]
+            stage = next.get(ATTR_STAGE)
+            data[ATTR_NEXT_START] = next.get(ATTR_START_TIME)
+            data[ATTR_NEXT_END] = next.get(ATTR_END_TIME)
+            data[ATTR_NEXT_STAGE] = stage.value
+
+        data[ATTR_FORECAST] = forecast
+
+        self._attrs.update(data)
         return self._attrs
+
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -238,7 +262,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
                 ATTR_END_TIME: schedule[0].get(ATTR_END_TIME),
                 ATTR_START_IN: starts_in,
                 ATTR_END_IN: ends_in,
-                ATTR_SCHEDULE_STAGE: str(stage),
+                ATTR_SCHEDULE_STAGE: stage.value,
                 ATTR_SCHEDULE: schedule,
             }
         )
