@@ -35,9 +35,10 @@ from .const import (
     ATTR_END_TIME,
     ATTR_START_IN,
     ATTR_END_IN,
+    ATTR_NEXT_STAGE,
+    ATTR_NEXT_START_TIME,
+    ATTR_NEXT_END_TIME,
     ATTR_SCHEDULE,
-    ATTR_SCHEDULES,
-    ATTR_SCHEDULE_STAGE,
     ATTR_STAGE,
     ATTRIBUTION,
     CONF_MUNICIPALITY,
@@ -46,7 +47,10 @@ from .const import (
     CONF_AREAS,
     DOMAIN,
     NAME,
-    MANUFACTURER, CONF_PROVINCE_ID, ATTR_NEXT_START, ATTR_NEXT_END, ATTR_NEXT_STAGE, ATTR_FORECAST, ATTR_STAGE_FORECAST,
+    MANUFACTURER,
+    CONF_PROVINCE_ID,
+    ATTR_FORECAST,
+    ATTR_STAGE_FORECAST,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,26 +143,14 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         if stage in [Stage.UNKNOWN]:
             return self._attrs
 
-        data = {
-            ATTR_STAGE: stage
-        }
-
         forecast = self.coordinator.data.get(ATTR_STAGE_FORECAST, {})
         if not forecast:
             return self._attrs
 
-        if len(forecast) > 1:
-            next = forecast[1]
-            stage = next.get(ATTR_STAGE)
-            data[ATTR_NEXT_START] = next.get(ATTR_START_TIME)
-            data[ATTR_NEXT_END] = next.get(ATTR_END_TIME)
-            data[ATTR_NEXT_STAGE] = stage.value
-
-        data[ATTR_FORECAST] = forecast
-
+        data = get_sensor_attrs(forecast, stage)
         self._attrs.update(data)
-        return self._attrs
 
+        return self._attrs
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -200,22 +192,15 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.coordinator.data:
             return self._state
 
-        stage = self.coordinator.data.get(ATTR_STAGE, Stage.UNKNOWN)
-        if stage in [Stage.UNKNOWN]:
+        area_forecast = self.coordinator.data.get(ATTR_FORECAST).get(self.area.id)
+        if not area_forecast:
             return self._state
 
-        schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        area_data = schedules.get(self.area.id, {})
-        if not area_data:
-            return self._state
-
-        schedule = area_data.get(ATTR_SCHEDULE, {})
+        forecast = area_forecast[0]
+        now = datetime.now(timezone.utc)
 
         self._state = cast(StateType, STATE_OFF)
-        now = datetime.now(timezone.utc)
-        start_time = datetime.fromisoformat(schedule[0].get(ATTR_START_TIME))
-        end_time = datetime.fromisoformat(schedule[0].get(ATTR_END_TIME))
-        if start_time < now < end_time:
+        if forecast.get(ATTR_START_TIME) < now < forecast.get(ATTR_END_TIME):
             self._state = cast(StateType, STATE_ON)
 
         return self._state
@@ -237,35 +222,12 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.coordinator.data:
             return self._attrs
 
-        schedules = self.coordinator.data.get(ATTR_SCHEDULES, {})
-        area_data = schedules.get(self.area.id, {})
-        if not area_data:
+        area_forecast = self.coordinator.data.get(ATTR_FORECAST).get(self.area.id, [])
+        if not area_forecast:
             return self._attrs
 
-        stage = area_data.get(ATTR_STAGE, Stage.UNKNOWN)
-        schedule = area_data.get(ATTR_SCHEDULE, {})
-
-        now = datetime.now(timezone.utc)
-        ends_at = datetime.fromisoformat(schedule[0].get(ATTR_END_TIME))
-        ends_in = ends_at - now
-        ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
-        ends_in = int(ends_in.total_seconds() / 60)  # minutes
-
-        starts_at = datetime.fromisoformat(schedule[0].get(ATTR_START_TIME))
-        starts_in = starts_at - now
-        starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
-        starts_in = int(starts_in.total_seconds() / 60)  # minutes
-
-        self._attrs.update(
-            {
-                ATTR_START_TIME: schedule[0].get(ATTR_START_TIME),
-                ATTR_END_TIME: schedule[0].get(ATTR_END_TIME),
-                ATTR_START_IN: starts_in,
-                ATTR_END_IN: ends_in,
-                ATTR_SCHEDULE_STAGE: stage.value,
-                ATTR_SCHEDULE: schedule,
-            }
-        )
+        data = get_sensor_attrs(area_forecast)
+        self._attrs.update(data)
 
         return self._attrs
 
@@ -273,3 +235,80 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
     def _handle_coordinator_update(self) -> None:
         """Handle data update."""
         self.async_write_ha_state()
+
+
+def stage_forecast_to_data(stage_forecast: list) -> list:
+    """Convert stage forecast to serializable data"""
+    data = []
+    for forecast in stage_forecast:
+        for schedule in forecast.get(ATTR_SCHEDULE):
+            data.append(
+                {
+                    ATTR_STAGE: forecast.get(ATTR_STAGE).value,
+                    ATTR_START_TIME: schedule[0].isoformat(),
+                    ATTR_END_TIME: schedule[1].isoformat(),
+                }
+            )
+    return data
+
+
+def get_sensor_attrs(forecast: list, stage: Stage = Stage.UNKNOWN) -> dict:
+    now = datetime.now(timezone.utc)
+    data = {
+        ATTR_STAGE: stage,
+        ATTR_START_TIME: 0,
+        ATTR_END_TIME: 0,
+        ATTR_END_IN: 0,
+        ATTR_START_IN: 0,
+        ATTR_NEXT_STAGE: Stage.NO_LOAD_SHEDDING,
+        ATTR_NEXT_START_TIME: 0,
+        ATTR_NEXT_END_TIME: 0,
+        ATTR_FORECAST: [],
+    }
+
+    current, next = {}, {}
+    if now < forecast[0].get(ATTR_START_TIME):
+        # before
+        next = forecast[0]
+    elif forecast[0].get(ATTR_START_TIME) <= now <= forecast[0].get(ATTR_END_TIME):
+        # during
+        current = forecast[0]
+        next = forecast[1]
+    elif forecast[0].get(ATTR_END_TIME) < now:
+        # after
+        next = forecast[1]
+
+    if current:
+        data[ATTR_STAGE] = current.get(ATTR_STAGE)
+        data[ATTR_START_TIME] = current.get(ATTR_START_TIME)
+        data[ATTR_END_TIME] = current.get(ATTR_END_TIME)
+
+        end_time = current.get(ATTR_END_TIME)
+        ends_in = end_time - now
+        ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
+        ends_in = int(ends_in.total_seconds() / 60)  # minutes
+        data[ATTR_END_IN] = ends_in
+
+    if next:
+        data[ATTR_NEXT_STAGE] = next.get(ATTR_STAGE)
+        data[ATTR_NEXT_START_TIME] = next.get(ATTR_START_TIME)
+        data[ATTR_NEXT_END_TIME] = next.get(ATTR_START_TIME)
+
+        start_time = next.get(ATTR_START_TIME)
+        starts_in = start_time - now
+        starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
+        starts_in = int(starts_in.total_seconds() / 60)  # minutes
+        data[ATTR_START_IN] = starts_in
+
+    data[ATTR_FORECAST] = forecast
+
+    if stage == Stage.UNKNOWN:
+        del data[ATTR_STAGE]
+    if data[ATTR_START_TIME] == 0:
+        del data[ATTR_START_TIME]
+    if data[ATTR_END_TIME] == 0:
+        del data[ATTR_END_TIME]
+    if data[ATTR_END_IN] == 0:
+        del data[ATTR_END_IN]
+
+    return data
