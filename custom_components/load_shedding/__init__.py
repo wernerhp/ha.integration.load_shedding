@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -13,7 +13,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from load_shedding import (
     get_area_schedule,
@@ -26,8 +26,6 @@ from load_shedding.providers import Area, Province, ProviderError, StageError, S
 from .const import (
     ATTR_SCHEDULE,
     ATTR_STAGE,
-    ATTR_START_TIME,
-    ATTR_END_TIME,
     CONF_MUNICIPALITY,
     CONF_PROVIDER,
     CONF_PROVINCE_ID,
@@ -36,9 +34,7 @@ from .const import (
     CONF_AREA_ID,
     CONF_AREAS,
     DEFAULT_SCAN_INTERVAL,
-    DEFAULT_STAGE,
     DOMAIN,
-    MAX_FORECAST_DAYS,
     ATTR_STAGE_FORECAST,
     ATTR_FORECAST,
 )
@@ -59,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
 
     schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass, provider)
-    for data in entry.data.get(CONF_AREAS, {}):
+    for data in entry.data.get(CONF_AREAS, []):
         area = Area(
             id=data.get(CONF_AREA_ID),
             name=data.get(CONF_AREA),
@@ -125,7 +121,6 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.data = {}
         self.provider = provider
-        self.current_stage: Stage = Stage.UNKNOWN
         self.stage_forecast: list = []
 
     async def async_update_stage(self) -> dict:
@@ -137,10 +132,10 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except (ProviderError, StageError) as err:
             _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
-            raise UpdateFailed("Unable to get schedule") from err
+            return self.data
         except Exception as err:
             _LOGGER.debug("Unknown error: %s", err, exc_info=True)
-            raise UpdateFailed("Unable to get schedule") from err
+            return self.data
         else:
             self.data[ATTR_STAGE] = current_stage
 
@@ -151,10 +146,10 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except (ProviderError, StageError) as err:
             _LOGGER.debug("Unable to get stage forecast %s", err, exc_info=True)
-            raise UpdateFailed("Unable to get stage forecast") from err
+            return self.data
         except Exception as err:
             _LOGGER.debug("Unknown error: %s", err, exc_info=True)
-            raise UpdateFailed("Unable to get stage forecast") from err
+            return self.data
         else:
             self.stage_forecast = stage_forecast
             self.data[ATTR_STAGE_FORECAST] = stage_forecast
@@ -190,9 +185,9 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
         stage: Stage = Stage.UNKNOWN
         if stage_coordinator.data:
             stage = stage_coordinator.data.get(ATTR_STAGE)
-            stage_forecast = stage_coordinator.data.get(ATTR_STAGE_FORECAST)
+            stage_forecast = stage_coordinator.data.get(ATTR_STAGE_FORECAST, [])
 
-        if stage in [Stage.NO_LOAD_SHEDDING, Stage.UNKNOWN]:
+        if stage in [Stage.UNKNOWN]:
             return self.data
 
         area_forecasts: dict = {}
