@@ -196,12 +196,14 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
             # Get area forecast for each forecast stage
             for forecast in stage_forecast:
                 forecast_stage = forecast.get(ATTR_STAGE)
+                if forecast_stage in [Stage.NO_LOAD_SHEDDING, Stage.UNKNOWN]:
+                    continue
                 try:
                     # Get area schedule for the forecast stage
                     area_schedule = await self.hass.async_add_executor_job(
                         get_area_schedule, self.provider, area, forecast_stage
                     )
-                except Exception as err:
+                except (StageError, Exception) as err:
                     _LOGGER.debug("Unable to get area schedule: %s", err, exc_info=True)
                     continue
                 else:
