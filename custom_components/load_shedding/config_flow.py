@@ -10,7 +10,7 @@ from homeassistant.const import CONF_DESCRIPTION
 from homeassistant.data_entry_flow import FlowResult, FlowResultType
 
 from load_shedding import get_areas, Provider
-from load_shedding.providers import ProviderError
+from load_shedding.providers import ProviderError, Stage
 from .const import (
     CONF_AREA,
     CONF_AREAS,
@@ -21,6 +21,7 @@ from .const import (
     CONF_STAGE,
     DOMAIN,
     NAME,
+    CONF_DEFAULT_SCHEDULE_STAGE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,13 +47,13 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self.areas: dict = {}
 
     async def async_step_user(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
         return await self.async_step_lookup_areas(user_input)
 
     async def async_step_lookup_areas(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to search for and select an area."""
         errors = {}
@@ -63,12 +64,28 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 default_provider = provider.value
             providers[provider.value] = f"{provider}"
 
+        stages = {}
+        default_stage = Stage.STAGE_4.value
+        for stage in [
+            Stage.STAGE_1,
+            Stage.STAGE_2,
+            Stage.STAGE_3,
+            Stage.STAGE_4,
+            Stage.STAGE_5,
+            Stage.STAGE_6,
+            Stage.STAGE_7,
+            Stage.STAGE_8,
+        ]:
+            stages[stage.value] = f"{stage}"
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_PROVIDER, default=default_provider): vol.In(
                     providers
                 ),
                 vol.Required(CONF_SEARCH): str,
+                vol.Required(
+                    CONF_DEFAULT_SCHEDULE_STAGE, default=default_stage
+                ): vol.In(stages),
             }
         )
 
@@ -128,6 +145,10 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_SEARCH, default=user_input.get(CONF_SEARCH)
                         ): str,
                         vol.Optional(CONF_AREA_ID): vol.In(area_ids),
+                        vol.Required(
+                            CONF_DEFAULT_SCHEDULE_STAGE,
+                            default=user_input.get(CONF_DEFAULT_SCHEDULE_STAGE),
+                        ): vol.In(stages),
                     }
                 )
 
@@ -140,7 +161,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_select_area(user_input)
 
     async def async_step_select_area(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to create a area."""
         area_id = user_input.get(CONF_AREA_ID)
@@ -150,6 +171,9 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         data = {
             CONF_STAGE: {
                 CONF_PROVIDER: self.provider.value,
+                CONF_DEFAULT_SCHEDULE_STAGE: user_input.get(
+                    CONF_DEFAULT_SCHEDULE_STAGE
+                ),
             },
             CONF_AREAS: [
                 {

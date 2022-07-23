@@ -8,7 +8,7 @@
           "province": "Province",
           "results": "Results",
           "search": "Search",
-          "stage": "Stage",
+          "default_schedule": "Default Schedule",
           "area": "Area",
           "area_id": "Area"
         }
