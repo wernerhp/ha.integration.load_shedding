@@ -145,11 +145,17 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         if stage in [Stage.UNKNOWN]:
             return self._attrs
 
-        forecast = self.coordinator.data.get(ATTR_STAGE_FORECAST, {})
-        if not forecast:
-            return self._attrs
+        stage_forecast = self.coordinator.data.get(ATTR_STAGE_FORECAST, {})
 
-        data = get_sensor_attrs(forecast, stage)
+        data = get_sensor_attrs(stage_forecast, stage)
+        for f in stage_forecast:
+            data[ATTR_FORECAST].append(
+                {
+                    ATTR_STAGE: f.get(ATTR_STAGE).value,
+                    ATTR_START_TIME: f.get(ATTR_START_TIME).isoformat(),
+                    ATTR_END_TIME: f.get(ATTR_END_TIME).isoformat(),
+                }
+            )
         self._attrs.update(data)
 
         return self._attrs
@@ -195,10 +201,15 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             return self._state
 
         area_forecast = self.coordinator.data.get(ATTR_FORECAST, {}).get(self.area.id)
-        if not area_forecast:
+        area_schedule = self.coordinator.data.get(ATTR_SCHEDULE, {}).get(self.area.id)
+
+        if area_forecast:
+            forecast = area_forecast[0]
+        elif area_schedule:
+            forecast = area_schedule[0]
+        else:
             return self._state
 
-        forecast = area_forecast[0]
         now = datetime.now(timezone.utc)
 
         self._state = cast(StateType, STATE_OFF)
@@ -224,13 +235,32 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.coordinator.data:
             return self._attrs
 
+        data = self._attrs
+        area_schedule = self.coordinator.data.get(ATTR_SCHEDULE).get(self.area.id, [])
+        if area_schedule:
+            data = get_sensor_attrs(area_schedule)
+            for s in area_schedule:
+                data[ATTR_SCHEDULE].append(
+                    {
+                        ATTR_STAGE: s.get(ATTR_STAGE).value,
+                        ATTR_START_TIME: s.get(ATTR_START_TIME).isoformat(),
+                        ATTR_END_TIME: s.get(ATTR_END_TIME).isoformat(),
+                    }
+                )
+
         area_forecast = self.coordinator.data.get(ATTR_FORECAST).get(self.area.id, [])
-        if not area_forecast:
-            return self._attrs
+        if area_forecast:
+            data = get_sensor_attrs(area_forecast)
+            for f in area_forecast:
+                data[ATTR_FORECAST].append(
+                    {
+                        ATTR_STAGE: f.get(ATTR_STAGE).value,
+                        ATTR_START_TIME: f.get(ATTR_START_TIME).isoformat(),
+                        ATTR_END_TIME: f.get(ATTR_END_TIME).isoformat(),
+                    }
+                )
 
-        data = get_sensor_attrs(area_forecast)
         self._attrs.update(data)
-
         return self._attrs
 
     @callback
@@ -254,8 +284,13 @@ def stage_forecast_to_data(stage_forecast: list) -> list:
     return data
 
 
-def get_sensor_attrs(forecast: list, stage: Stage = Stage.UNKNOWN) -> dict:
+def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> dict:
     """Get sensor attributes for the given forecast and stage"""
+    if not forecast:
+        return {
+            ATTR_STAGE: stage.value,
+        }
+
     now = datetime.now(timezone.utc)
     data = {
         ATTR_STAGE: stage.value,
@@ -267,6 +302,7 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.UNKNOWN) -> dict:
         ATTR_NEXT_START_TIME: 0,
         ATTR_NEXT_END_TIME: 0,
         ATTR_FORECAST: [],
+        ATTR_SCHEDULE: [],
     }
 
     current, next = {}, {}
@@ -302,22 +338,5 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.UNKNOWN) -> dict:
         starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
         starts_in = int(starts_in.total_seconds() / 60)  # minutes
         data[ATTR_START_IN] = starts_in
-
-    data[ATTR_FORECAST] = []
-    for f in forecast:
-        data[ATTR_FORECAST].append({
-            ATTR_STAGE: f.get(ATTR_STAGE).value,
-            ATTR_START_TIME: f.get(ATTR_START_TIME).isoformat(),
-            ATTR_END_TIME: f.get(ATTR_END_TIME).isoformat(),
-        })
-
-    if stage == Stage.UNKNOWN:
-        del data[ATTR_STAGE]
-    if data[ATTR_START_TIME] == 0:
-        del data[ATTR_START_TIME]
-    if data[ATTR_END_TIME] == 0:
-        del data[ATTR_END_TIME]
-    if data[ATTR_END_IN] == 0:
-        del data[ATTR_END_IN]
 
     return data

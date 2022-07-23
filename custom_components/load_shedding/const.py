@@ -15,6 +15,7 @@ NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
 DEFAULT_SCAN_INTERVAL = 61  # seconds
 
+CONF_DEFAULT_SCHEDULE_STAGE: Final = "default_schedule_stage"
 CONF_MUNICIPALITY: Final = "municipality"
 CONF_OPTIONS: Final = "options"
 CONF_PROVIDER: Final = "provider"
