@@ -4,11 +4,14 @@ from __future__ import annotations
 import logging
 from datetime import timedelta, datetime, timezone
 from typing import Any
+from flask import current_app
 
 from regex import B
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    ATTR_NAME,
+    CONF_API_KEY,
     CONF_SCAN_INTERVAL,
     EVENT_HOMEASSISTANT_STARTED,
     CONF_DESCRIPTION,
@@ -18,27 +21,42 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from load_shedding import (
-    get_area_schedule,
-    get_stage,
-    get_stage_forecast,
-    get_area_forecast,
+    # get_area_schedule,
+    # get_stages,
+    # get_stage_forecast,
+    # get_area_forecast,
     Provider,
 )
-from load_shedding.providers import Area, Province, ProviderError, StageError, Stage
+from load_shedding.libs.sepush import SePush
+from load_shedding.providers import (
+    Area,
+    Province,
+    ProviderError,
+    StageError,
+    Stage,
+    to_utc,
+)
 from .const import (
+    ATTR_AREAS,
+    ATTR_NEXT_STAGE,
+    ATTR_NEXT_START_TIME,
     ATTR_SCHEDULE,
     ATTR_STAGE,
+    ATTR_STAGE_FORECAST,
+    CONF_COCT,
+    CONF_ESKOM,
     CONF_DEFAULT_SCHEDULE_STAGE,
     CONF_MUNICIPALITY,
     CONF_PROVIDER,
     CONF_PROVINCE_ID,
     CONF_STAGE,
+    CONF_STAGE_COCT,
     CONF_AREA,
     CONF_AREA_ID,
     CONF_AREAS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    ATTR_STAGE_FORECAST,
+    # ATTR_STAGE_FORECAST,
     ATTR_FORECAST,
     ATTR_START_TIME,
     ATTR_END_TIME,
@@ -58,9 +76,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
     stage_data = entry.data.get(CONF_STAGE, {})
-    provider = Provider(stage_data.get(CONF_PROVIDER))()
+    # provider = Provider(stage_data.get(CONF_PROVIDER))()
+    api_key = entry.data.get(CONF_API_KEY)
+    # provider = Provider.SE_PUSH(token=api_key)
+    provider: SePush = SePush(token=api_key)
     default_stage = Stage(stage_data.get(CONF_DEFAULT_SCHEDULE_STAGE, 4))
-    stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
+    # coct_stage = entry.data.get(CONF_STAGE_COCT, False)
+    stage_coordinator = LoadSheddingStageUpdateCoordinator(
+        hass, provider
+    )  # , coct_stage)
 
     schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(
         hass, provider, default_stage=default_stage
@@ -94,7 +118,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schedule_coordinator.update_interval = timedelta(
             seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         )
-        await schedule_coordinator.async_refresh()
+        # await schedule_coordinator.async_refresh()
 
     if hass.state == CoreState.running:
         await _schedule_updates()
@@ -121,7 +145,7 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding stage from Provider."""
 
-    def __init__(self, hass: HomeAssistant, provider: Provider) -> None:
+    def __init__(self, hass: HomeAssistant, provider: SePush) -> None:
         """Initialize."""
         super().__init__(
             hass,
@@ -131,32 +155,44 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.data = {}
         self.provider = provider
-        self.stage_forecast: list = []
 
     async def async_update_stage(self) -> dict:
         """Retrieve latest stage."""
-        # Current Stage
         try:
-            current_stage = await self.hass.async_add_executor_job(
-                get_stage, self.provider
-            )
-        except (ProviderError, StageError) as err:
+            esp = await self.hass.async_add_executor_job(self.provider.status)
+        except (ProviderError, StageError, Exception) as err:
             _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
             return self.data
-        else:
-            self.data[ATTR_STAGE] = current_stage
 
-        # Forecast Stage
-        try:
-            stage_forecast = await self.hass.async_add_executor_job(
-                get_stage_forecast, self.provider
-            )
-        except (ProviderError, StageError) as err:
-            _LOGGER.debug("Unable to get stage forecast %s", err, exc_info=True)
-            return self.data
-        else:
-            self.stage_forecast = stage_forecast
-            self.data[ATTR_STAGE_FORECAST] = stage_forecast
+        sources = esp.get("status", {})
+        for source in sources:
+            key = CONF_ESKOM
+            if source == "capetown":
+                key = CONF_COCT
+
+            data = sources.get(source)
+
+            stage_forecast = []
+            for next_stage in data.get("next_stages", []):
+                stage_forecast.append(
+                    {
+                        ATTR_STAGE: Stage(int(next_stage.get("stage", "0"))),
+                        ATTR_START_TIME: datetime.fromisoformat(
+                            next_stage.get("stage_start_timestamp")
+                        ).astimezone(timezone.utc),
+                        ATTR_END_TIME: datetime.fromisoformat(
+                            next_stage.get("stage_start_timestamp")
+                        )
+                        .replace(hour=23, minute=59, second=59, microsecond=9999)
+                        .astimezone(timezone.utc),
+                    }
+                )
+
+            self.data[key] = {
+                ATTR_NAME: data.get("name", ""),
+                ATTR_STAGE: Stage(int(data.get("stage", "0"))),
+                ATTR_STAGE_FORECAST: stage_forecast,
+            }
 
         return self.data
 
@@ -165,7 +201,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
     """Class to manage fetching LoadShedding schedule from Provider."""
 
     def __init__(
-        self, hass: HomeAssistant, provider: Provider, default_stage: Stage
+        self, hass: HomeAssistant, provider: SePush, default_stage: Stage
     ) -> None:
         """Initialize."""
         super().__init__(
@@ -185,96 +221,104 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
 
     async def async_update_schedule(self) -> dict:
         """Retrieve schedule data."""
-        stage_coordinator: LoadSheddingStageUpdateCoordinator = self.hass.data.get(
-            DOMAIN, {}
-        ).get(ATTR_STAGE)
 
-        current_stage: Stage = Stage.UNKNOWN
-        if stage_coordinator.data:
-            current_stage = stage_coordinator.data.get(ATTR_STAGE)
-            stage_forecast = stage_coordinator.data.get(ATTR_STAGE_FORECAST, [])
-
-        if current_stage in [Stage.UNKNOWN]:
-            return self.data
-
-        area_forecasts: dict = {}
-        area_schedules: dict = {}
+        areas: dict = {}
         for area in self.areas:
-            area_forecasts[area.id] = []
-            area_schedules[area.id] = []
-
-            # Get area forecast for each forecast stage
-            for forecast in stage_forecast:
-                try:
-                    area_forecast = await self.get_area_forecast(area, forecast)
-                except ProviderError:
-                    continue
-                else:
-                    area_forecasts[area.id].extend(area_forecast)
-
-            if not area_forecasts[area.id] and current_stage not in [
-                Stage.NO_LOAD_SHEDDING
-            ]:
-                # Get area schedule for current stage
-                try:
-                    now = datetime.now(timezone.utc)
-                    forecast = {
-                        ATTR_STAGE: current_stage,
-                        ATTR_START_TIME: now,
-                        ATTR_END_TIME: now + timedelta(days=7),
-                    }
-                    area_forecast = await self.get_area_forecast(area, forecast)
-                except ProviderError:
-                    continue
-                else:
-                    area_forecasts[area.id].extend(area_forecast)
-
-            # Get area schedule for default stage
+            # Get foreacast for area
+            forecast = []
             try:
-                now = datetime.now(timezone.utc).replace(
-                    minute=0, second=0, microsecond=0
+                data = await self.hass.async_add_executor_job(
+                    self.provider.area, area.id
                 )
-                forecast = {
-                    ATTR_STAGE: self.default_stage,
-                    ATTR_START_TIME: now,
-                    ATTR_END_TIME: now.replace(hour=0)
-                    + timedelta(days=MAX_FORECAST_DAYS),
-                }
-                area_schedule = await self.get_area_forecast(area, forecast)
-            except ProviderError:
-                continue
-            else:
-                area_schedules[area.id].extend(area_schedule)
+            except Exception as e:
+                raise ProviderError(e)
 
-        self.data[ATTR_FORECAST] = area_forecasts
-        self.data[ATTR_SCHEDULE] = area_schedules
+            for event in data.get("events", {}):
+                note = event.get("note")
+                parts = str(note).split(" ")
+                stage = Stage(int(parts[1]))
+                start = datetime.fromisoformat(event.get("start")).astimezone(
+                    timezone.utc
+                )
+                end = datetime.fromisoformat(event.get("end")).astimezone(timezone.utc)
+
+                forecast.append(
+                    {
+                        ATTR_STAGE: stage,
+                        ATTR_START_TIME: start,
+                        ATTR_END_TIME: end,
+                    }
+                )
+
+            # Get schedule for area
+            stage_schedule = {}
+            sast = timezone(timedelta(hours=+2), "SAST")
+            for day in data.get("schedule", {}).get("days", []):
+                date = datetime.strptime(day.get("date"), "%Y-%m-%d")
+                stages = day.get("stages", [])
+                # if len(stages) < stage.value:
+                #     continue
+                for stage in range(len(stages)):
+                    schedule = []
+                    for slot in stages[stage]:
+                        start_str, end_str = slot.strip().split("-")
+                        start = datetime.strptime(start_str, "%H:%M").replace(
+                            year=date.year,
+                            month=date.month,
+                            day=date.day,
+                            second=0,
+                            microsecond=0,
+                            tzinfo=sast,
+                        )
+                        end = datetime.strptime(end_str, "%H:%M").replace(
+                            year=date.year,
+                            month=date.month,
+                            day=date.day,
+                            second=0,
+                            microsecond=0,
+                            tzinfo=sast,
+                        )
+                        if end < start:
+                            end = end + timedelta(days=1)
+                        schedule.append((start, end))
+
+                    schedule = to_utc(schedule)
+                    stage_schedule[stage + 1] = schedule
+
+            areas[area.id] = {
+                ATTR_FORECAST: forecast,
+                ATTR_SCHEDULE: stage_schedule,
+            }
+
+        # self.data[ATTR_FORECAST] = area_forecasts
+        self.data[ATTR_AREAS] = areas
 
         return self.data
 
-    async def get_area_forecast(self, area, forecast):
-        """Get the forecast for an area"""
-        forecast_stage = forecast.get(ATTR_STAGE)
-        if forecast_stage in [Stage.NO_LOAD_SHEDDING, Stage.UNKNOWN]:
-            raise ProviderError
-        try:
-            # Get area schedule for the forecast stage
-            area_schedule = await self.hass.async_add_executor_job(
-                get_area_schedule, self.provider, area, forecast_stage
-            )
-        except (StageError, Exception) as err:
-            _LOGGER.debug("Unable to get area schedule: %s", err, exc_info=True)
-            raise ProviderError from err
+    # async def get_area_forecast(self, area, forecast):
+    #     """Get the forecast for an area"""
+    #     forecast_stage = forecast.get(ATTR_STAGE)
+    #     if forecast_stage in [Stage.NO_LOAD_SHEDDING, Stage.UNKNOWN]:
+    #         raise ProviderError
+    #     try:
+    #         # Get area schedule for the forecast stage
+    #         area_schedule = await self.hass.async_add_executor_job(
+    #             get_area_schedule, self.provider, area, forecast_stage
+    #         )
+    #     except (StageError, Exception) as err:
+    #         _LOGGER.debug("Unable to get area schedule: %s", err, exc_info=True)
+    #         raise ProviderError from err
 
-        try:
-            # Get area forecast from area schedule and stage forecast
-            area_forecast = await self.hass.async_add_executor_job(
-                get_area_forecast, area_schedule, forecast
-            )
-        except Exception as err:
-            _LOGGER.debug("Unable to get area forecast: %s", err, exc_info=True)
-            raise ProviderError from err
-        else:
-            return area_forecast
+    #     try:
+    #         # Get area forecast from area schedule and stage forecast
+    #         area_forecast = await self.hass.async_add_executor_job(
+    #             get_area_forecast, area_schedule, forecast
+    #         )
+    #     except Exception as err:
+    #         _LOGGER.debug("Unable to get area forecast: %s", err, exc_info=True)
+    #         raise ProviderError from err
+    #     else:
+    #         return area_forecast
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

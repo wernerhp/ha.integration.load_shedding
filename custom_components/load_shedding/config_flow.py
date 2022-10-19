@@ -6,10 +6,10 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_DESCRIPTION
+from homeassistant.const import CONF_API_KEY, CONF_DESCRIPTION
 from homeassistant.data_entry_flow import FlowResult, FlowResultType
 
-from load_shedding import get_areas, Provider
+from load_shedding import get_areas, Province, Provider
 from load_shedding.providers import ProviderError, Stage
 from .const import (
     CONF_AREA,
@@ -19,9 +19,10 @@ from .const import (
     CONF_PROVIDER,
     CONF_SEARCH,
     CONF_STAGE,
+    CONF_STAGE_COCT,
     DOMAIN,
     NAME,
-    CONF_DEFAULT_SCHEDULE_STAGE,
+    # CONF_DEFAULT_SCHEDULE_STAGE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,13 +44,99 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 2
 
     def __init__(self):
-        self.provider: Provider = Provider.ESKOM
+        self.provider: Provider = None
+        self.api_key: str = ""
+        # self.coct_stage: bool = False
         self.areas: dict = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
+        return await self.async_step_sepush(None)
+        # return await self.async_step_lookup_areas(user_input)
+        # return await self.async_step_provider(user_input)
+
+    async def async_step_provider(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the flow step to search for and select an area."""
+        errors = {}
+        providers = {}
+
+        if not user_input:
+            user_input = {}
+
+        # Provider
+        if user_input and user_input.get(CONF_PROVIDER):
+            self.provider = Provider(user_input.get(CONF_PROVIDER))
+        default_provider = self.provider.value if self.provider else None
+        for provider in list(Provider):
+            if not default_provider:
+                default_provider = provider.value
+            providers[provider.value] = f"{provider}"
+
+        data_schema = vol.Schema({})
+
+        if not self.provider:
+            data_schema = data_schema.extend(
+                {
+                    vol.Required(CONF_PROVIDER, default=default_provider): vol.In(
+                        providers
+                    ),
+                }
+            )
+
+        if data_schema.schema:
+            return self.async_show_form(
+                step_id="provider",
+                data_schema=data_schema,
+                errors=errors,
+            )
+
+        if self.provider == Provider.SE_PUSH:
+            return await self.async_step_sepush(None)
+
+        return await self.async_step_lookup_areas(user_input)
+
+    async def async_step_sepush(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the flow step to configure SePush."""
+        self.provider = Provider.SE_PUSH
+        errors = {}
+        data_schema = vol.Schema({})
+
+        if not user_input:
+            user_input = {}
+
+        # API Key
+        self.api_key = user_input.get(CONF_API_KEY, "")
+        if not self.api_key:
+            data_schema = data_schema.extend(
+                {
+                    vol.Required(CONF_API_KEY): str,
+                }
+            )
+            self.api_key = user_input.get(CONF_API_KEY, "")
+
+        # CoCT Stage
+        # self.coct_stage = user_input.get(CONF_STAGE_COCT, "")
+        # if not self.coct_stage:
+        #     data_schema = data_schema.extend(
+        #         {
+        #             vol.Required(CONF_STAGE_COCT, default=False): bool,
+        #         }
+        #     )
+        #     self.coct_stage = user_input.get(CONF_STAGE_COCT, "")
+
+        if data_schema.schema:
+            return self.async_show_form(
+                step_id="sepush",
+                data_schema=data_schema,
+                errors=errors,
+            )
+
         return await self.async_step_lookup_areas(user_input)
 
     async def async_step_lookup_areas(
@@ -57,12 +144,12 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the flow step to search for and select an area."""
         errors = {}
-        providers = {}
-        default_provider = None
-        for provider in list(Provider):
-            if not default_provider:
-                default_provider = provider.value
-            providers[provider.value] = f"{provider}"
+        # providers = {}
+        # default_provider = None
+        # for provider in list(Provider):
+        #     if not default_provider:
+        #         default_provider = provider.value
+        #     providers[provider.value] = f"{provider}"
 
         stages = {}
         default_stage = Stage.STAGE_4.value
@@ -79,13 +166,13 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             stages[stage.value] = f"{stage}"
         data_schema = vol.Schema(
             {
-                vol.Required(CONF_PROVIDER, default=default_provider): vol.In(
-                    providers
-                ),
+                # vol.Required(CONF_PROVIDER, default=default_provider): vol.In(
+                #     providers
+                # ),
                 vol.Required(CONF_SEARCH): str,
-                vol.Required(
-                    CONF_DEFAULT_SCHEDULE_STAGE, default=default_stage
-                ): vol.In(stages),
+                # vol.Required(
+                # CONF_DEFAULT_SCHEDULE_STAGE, default=default_stage
+                # ): vol.In(stages),
             }
         )
 
@@ -96,30 +183,37 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 errors=errors,
             )
 
-        if not user_input.get(CONF_PROVIDER):
-            errors["base"] = "no_provider"
+        # if not user_input.get(CONF_PROVIDER):
+        #     errors["base"] = "no_provider"
+        #     return self.async_show_form(
+        #         step_id="lookup_areas",
+        #         data_schema=data_schema,
+        #         errors=errors,
+        #     )
+
+        data_schema = vol.Schema(
+            {
+                # vol.Required(
+                #     CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
+                # ): vol.In(providers),
+                vol.Required(CONF_SEARCH, default=user_input.get(CONF_SEARCH)): str,
+            }
+        )
+
+        search_text = user_input.get(CONF_SEARCH)
+        if not search_text:
             return self.async_show_form(
                 step_id="lookup_areas",
                 data_schema=data_schema,
                 errors=errors,
             )
 
-        data_schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
-                ): vol.In(providers),
-                vol.Required(CONF_SEARCH, default=user_input.get(CONF_SEARCH)): str,
-            }
-        )
-
-        search_text = user_input.get(CONF_SEARCH)
-        self.provider = Provider(user_input.get(CONF_PROVIDER))
         if not user_input.get(CONF_AREA_ID):
             area_ids = {}
             try:
+                provider = self.provider(token=self.api_key)
                 results = await self.hass.async_add_executor_job(
-                    get_areas, self.provider(), search_text
+                    get_areas, provider, search_text
                 )
             except ProviderError:
                 _LOGGER.debug("Provider error", exc_info=True)
@@ -128,9 +222,13 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 self.areas = {}
                 for area in results:
                     self.areas[area.id] = area
-                    area_ids[
-                        area.id
-                    ] = f"{area.name}, {area.municipality}, {area.province}"
+
+                    area_ids[area.id] = f"{area.name}"
+
+                    if area.municipality:
+                        area_ids[area.id] += f", {area.municipality}"
+                    if area.province is not Province.UNKNOWN:
+                        area_ids[area.id] += f", {area.province}"
 
                 if not self.areas:
                     errors[CONF_SEARCH] = "no_results_found"
@@ -138,19 +236,27 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 data_schema = vol.Schema(
                     {
-                        vol.Required(
-                            CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
-                        ): vol.In(providers),
+                        # vol.Required(
+                        #     CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
+                        # ): vol.In(providers),
                         vol.Required(
                             CONF_SEARCH, default=user_input.get(CONF_SEARCH)
                         ): str,
                         vol.Optional(CONF_AREA_ID): vol.In(area_ids),
-                        vol.Required(
-                            CONF_DEFAULT_SCHEDULE_STAGE,
-                            default=user_input.get(CONF_DEFAULT_SCHEDULE_STAGE),
-                        ): vol.In(stages),
+                        # vol.Required(
+                        # CONF_DEFAULT_SCHEDULE_STAGE,
+                        # default=user_input.get(CONF_DEFAULT_SCHEDULE_STAGE),
+                        # ): vol.In(stages),
                     }
                 )
+                # if self.provider == Provider.SE_PUSH:
+                #     data_schema.extend(
+                #         schema=vol.Schema(
+                #             {
+                #                 vol.Required(CONF_STAGE_COCT, default=False): bool,
+                #             }
+                #         )
+                #     )
 
             return self.async_show_form(
                 step_id="lookup_areas",
@@ -167,13 +273,21 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         area_id = user_input.get(CONF_AREA_ID)
         area = self.areas.get(area_id)
 
-        description = f"{area.name}, {area.municipality}, {area.province}"
+        description = f"{area.name}"
+
+        if area.municipality:
+            description += f", {area.municipality}"
+        if area.province is not Province.UNKNOWN:
+            description += f", {area.province}"
+
         data = {
+            CONF_API_KEY: self.api_key,
             CONF_STAGE: {
                 CONF_PROVIDER: self.provider.value,
-                CONF_DEFAULT_SCHEDULE_STAGE: user_input.get(
-                    CONF_DEFAULT_SCHEDULE_STAGE
-                ),
+                # CONF_STAGE_COCT: self.coct_stage,
+                # CONF_DEFAULT_SCHEDULE_STAGE: user_input.get(
+                # CONF_DEFAULT_SCHEDULE_STAGE
+                # ),
             },
             CONF_AREAS: [
                 {

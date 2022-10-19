@@ -15,13 +15,26 @@
                 "data": {
                     "area": "Area",
                     "area_id": "Area",
+                    "default_schedule": "Default Schedule",
                     "provider": "Provider",
                     "province": "Province",
                     "results": "Results",
-                    "search": "Search",
-                    "stage": "Stage"
+                    "search": "Search"
                 },
                 "description": "Search your area name, e.g. Milnerton, then select your area ID from the results."
+            },
+            "provider": {
+                "data": {
+                    "provider": "Provider"
+                },
+                "description": ""
+            },
+            "sepush": {
+                "data": {
+                    "api_key": "API Key / Token",
+                    "coct_stage": "City of Cape Town Stages"
+                },
+                "description": ""
             }
         }
     }

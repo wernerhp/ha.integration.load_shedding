@@ -5,7 +5,7 @@
   "documentation": "https://github.com/wernerhp/ha_integration_load_shedding/blob/master/README.md",
   "issue_tracker": "https://github.com/wernerhp/ha_integration_load_shedding/issues",
   "requirements": [
-    "load_shedding==0.9.1"
+    "load_shedding==0.11.1"
   ],
   "ssdp": [],
   "zeroconf": [],
@@ -15,5 +15,5 @@
     "@wernerhp"
   ],
   "iot_class": "cloud_polling",
-  "version": "0.5.3"
+  "version": "0.6.0"
 }

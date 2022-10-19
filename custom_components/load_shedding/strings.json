@@ -12,6 +12,19 @@
           "area": "Area",
           "area_id": "Area"
         }
+      },
+      "provider": {
+        "description": "",
+        "data": {
+          "provider": "Provider"
+        }
+      },
+      "sepush": {
+        "description": "",
+        "data": {
+          "api_key": "API Key / Token",
+          "coct_stage": "City of Cape Town Stages"
+        }
       }
     },
     "error": {

@@ -13,7 +13,7 @@ DOMAIN: Final = "load_shedding"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
-DEFAULT_SCAN_INTERVAL = 61  # seconds
+DEFAULT_SCAN_INTERVAL = 1830  # 61 seconds * 30
 
 CONF_DEFAULT_SCHEDULE_STAGE: Final = "default_schedule_stage"
 CONF_MUNICIPALITY: Final = "municipality"
@@ -24,12 +24,18 @@ CONF_PROVINCE: Final = "province"
 CONF_PROVINCE_ID: Final = "province_id"
 CONF_SCHEDULE: Final = "schedule"
 CONF_SCHEDULES: Final = "schedules"
+CONF_API_KEY: Final = "api_key"
 CONF_AREA: Final = "area"
 CONF_AREAS: Final = "areas"
 CONF_AREA_ID: Final = "area_id"
 CONF_SEARCH: Final = "search"
 CONF_STAGE: Final = "stage"
+CONF_STAGE_COCT: Final = "coct_stage"
 
+CONF_COCT: Final = "coct"
+CONF_ESKOM: Final = "eskom"
+
+ATTR_AREAS: Final = "areas"
 ATTR_CURRENT: Final = "current"
 ATTR_END_IN: Final = "ends_in"
 ATTR_END_TIME: Final = "end_time"

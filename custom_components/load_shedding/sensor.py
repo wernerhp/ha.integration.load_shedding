@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
-from load_shedding import Stage
+from load_shedding import Provider, Stage
 from load_shedding.providers import Area, Province
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
@@ -31,6 +31,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import LoadSheddingStageUpdateCoordinator, LoadSheddingScheduleUpdateCoordinator
 from .const import (
     API,
+    ATTR_AREAS,
     ATTR_START_TIME,
     ATTR_END_TIME,
     ATTR_START_IN,
@@ -48,6 +49,7 @@ from .const import (
     DOMAIN,
     NAME,
     MANUFACTURER,
+    MAX_FORECAST_DAYS,
     CONF_PROVINCE_ID,
     ATTR_FORECAST,
     ATTR_STAGE_FORECAST,
@@ -64,8 +66,9 @@ async def async_setup_entry(
     entities: list[Entity] = []
 
     stage_coordinator: LoadSheddingStageUpdateCoordinator = coordinators.get(ATTR_STAGE)
-    stage_entity = LoadSheddingStageSensorEntity(stage_coordinator)
-    entities.append(stage_entity)
+    for data in stage_coordinator.data:
+        stage_entity = LoadSheddingStageSensorEntity(stage_coordinator, data)
+        entities.append(stage_entity)
 
     schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = coordinators.get(
         ATTR_SCHEDULE
@@ -94,10 +97,13 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
 
     coordinator: LoadSheddingStageUpdateCoordinator
 
-    def __init__(self, coordinator: LoadSheddingStageUpdateCoordinator) -> None:
+    def __init__(
+        self, coordinator: LoadSheddingStageUpdateCoordinator, source: str
+    ) -> None:
         """Initialize."""
         super().__init__(coordinator)
 
+        self.data = coordinator.data.get(source)
         description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} stage",
             icon="mdi:lightning-bolt-outline",
@@ -105,20 +111,22 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
             entity_registry_enabled_default=True,
         )
 
+        # self.provider: Provider = provider
+        # self.source = source
         self.entity_description = description
-        self._device_id = "loadshedding.eskom.co.za"
+        # self._device_id = "loadshedding.eskom.co.za"
+        self._device_id = f"{NAME}"
         self._state: StateType = None
-        self._attrs = {
-            ATTR_ATTRIBUTION: ATTRIBUTION.format(provider=coordinator.provider.name)
-        }
-        self._attr_name = f"{NAME} Stage"
-        self._attr_unique_id = "stage"
+        self._attrs = {ATTR_ATTRIBUTION: ATTRIBUTION.format(provider="sepush.co.za")}
+        name = self.data.get("name", "")
+        self._attr_name = f"{NAME} {name} Stage"
+        self._attr_unique_id = f"stage_{name}"
 
     @property
     def native_value(self) -> StateType:
         """Return the stage state."""
-        if self.coordinator.data:
-            stage = self.coordinator.data.get(ATTR_STAGE, Stage.UNKNOWN)
+        if self.data:
+            stage = self.data.get(ATTR_STAGE, Stage.UNKNOWN)
             if stage in [Stage.UNKNOWN]:
                 return self._state
             self._state = cast(StateType, stage)
@@ -138,24 +146,25 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
     @property
     def extra_state_attributes(self) -> dict[str, list, Any]:
         """Return the state attributes."""
-        if not self.coordinator.data:
+        if not self.data:
             return self._attrs
 
-        stage = self.coordinator.data.get(ATTR_STAGE, Stage.UNKNOWN)
+        stage = self.data.get(ATTR_STAGE, Stage.UNKNOWN)
         if stage in [Stage.UNKNOWN]:
             return self._attrs
 
-        stage_forecast = self.coordinator.data.get(ATTR_STAGE_FORECAST, {})
+        stage_forecast = self.data.get(ATTR_STAGE_FORECAST, [])
 
         data = get_sensor_attrs(stage_forecast, stage)
         for f in stage_forecast:
-            data[ATTR_FORECAST].append(
-                {
-                    ATTR_STAGE: f.get(ATTR_STAGE).value,
-                    ATTR_START_TIME: f.get(ATTR_START_TIME).isoformat(),
-                    ATTR_END_TIME: f.get(ATTR_END_TIME).isoformat(),
-                }
-            )
+            forecast = {
+                ATTR_STAGE: f.get(ATTR_STAGE).value,
+                ATTR_START_TIME: f.get(ATTR_START_TIME).isoformat(),
+            }
+            if ATTR_END_TIME in f:
+                forecast[ATTR_END_TIME] = f.get(ATTR_END_TIME).isoformat()
+
+            data[ATTR_FORECAST].append(forecast)
         self._attrs.update(data)
 
         return self._attrs
@@ -186,11 +195,10 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         )
 
         self.entity_description = description
-        self._device_id = "loadshedding.eskom.co.za"
+        # self._device_id = "loadshedding.eskom.co.za"
+        self._device_id = f"{NAME}"
         self._state: StateType = None
-        self._attrs = {
-            ATTR_ATTRIBUTION: ATTRIBUTION.format(provider=coordinator.provider.name)
-        }
+        self._attrs = {ATTR_ATTRIBUTION: ATTRIBUTION.format(provider="sepush.co.za")}
         self._attr_name = f"{NAME} {area.name}"
         self._attr_unique_id = f"{area.id}"
 
@@ -200,20 +208,20 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.coordinator.data:
             return self._state
 
-        area_forecast = self.coordinator.data.get(ATTR_FORECAST, {}).get(self.area.id)
-        area_schedule = self.coordinator.data.get(ATTR_SCHEDULE, {}).get(self.area.id)
+        area = self.coordinator.data.get(ATTR_AREAS, {}).get(self.area.id)
 
-        if area_forecast:
-            forecast = area_forecast[0]
-        elif area_schedule:
-            forecast = area_schedule[0]
-        else:
+        forecast = area.get(ATTR_FORECAST)
+        self._state = cast(StateType, STATE_OFF)
+
+        if not forecast:
+            return self._state
+
+        next = forecast[0]
+        if next.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
             return self._state
 
         now = datetime.now(timezone.utc)
-
-        self._state = cast(StateType, STATE_OFF)
-        if forecast.get(ATTR_START_TIME) <= now <= forecast.get(ATTR_END_TIME):
+        if next.get(ATTR_START_TIME) <= now <= next.get(ATTR_END_TIME):
             self._state = cast(StateType, STATE_ON)
 
         return self._state
@@ -236,7 +244,35 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
             return self._attrs
 
         data = self._attrs
-        area_schedule = self.coordinator.data.get(ATTR_SCHEDULE).get(self.area.id, [])
+        stage_schedule = (
+            self.coordinator.data.get(ATTR_AREAS, {})
+            .get(self.area.id, [])
+            .get(ATTR_SCHEDULE)
+        )
+
+        data = []
+        now = datetime.now(timezone.utc)
+        for stage in stage_schedule:
+            for s in stage_schedule[stage]:
+                start_time = s[0]
+                end_time = s[1]
+
+                if start_time > now + timedelta(days=MAX_FORECAST_DAYS):
+                    continue
+
+                if end_time < now:
+                    continue
+
+                data.append(
+                    {
+                        ATTR_STAGE: Stage(stage),
+                        ATTR_START_TIME: start_time,
+                        ATTR_END_TIME: end_time,
+                    }
+                )
+
+        area_schedule = data
+
         if area_schedule:
             data = get_sensor_attrs(area_schedule)
             for s in area_schedule:
@@ -248,7 +284,11 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
                     }
                 )
 
-        area_forecast = self.coordinator.data.get(ATTR_FORECAST).get(self.area.id, [])
+        area_forecast = (
+            self.coordinator.data.get(ATTR_AREAS, {})
+            .get(self.area.id, [])
+            .get(ATTR_FORECAST)
+        )
         if area_forecast:
             data = get_sensor_attrs(area_forecast)
             for f in area_forecast:
@@ -260,6 +300,7 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
                     }
                 )
 
+        # data = area_schedule
         self._attrs.update(data)
         return self._attrs
 
@@ -309,13 +350,15 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
     if now < forecast[0].get(ATTR_START_TIME):
         # before
         next = forecast[0]
-    elif forecast[0].get(ATTR_START_TIME) <= now <= forecast[0].get(ATTR_END_TIME):
+    elif forecast[0].get(ATTR_START_TIME) <= now <= forecast[0].get(ATTR_END_TIME, now):
         # during
         current = forecast[0]
-        next = forecast[1]
+        if len(forecast) > 1:
+            next = forecast[1]
     elif forecast[0].get(ATTR_END_TIME) < now:
         # after
-        next = forecast[1]
+        if len(forecast) > 1:
+            next = forecast[1]
 
     if current:
         data[ATTR_STAGE] = current.get(ATTR_STAGE).value
@@ -331,7 +374,8 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
     if next:
         data[ATTR_NEXT_STAGE] = next.get(ATTR_STAGE).value
         data[ATTR_NEXT_START_TIME] = next.get(ATTR_START_TIME).isoformat()
-        data[ATTR_NEXT_END_TIME] = next.get(ATTR_END_TIME).isoformat()
+        if ATTR_END_IN in next:
+            data[ATTR_NEXT_END_TIME] = next.get(ATTR_END_TIME).isoformat()
 
         start_time = next.get(ATTR_START_TIME)
         starts_in = start_time - now
