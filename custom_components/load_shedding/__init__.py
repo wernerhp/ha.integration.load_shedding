@@ -33,6 +33,7 @@ from load_shedding.providers import (
     to_utc,
 )
 from .const import (
+    API_UPDATE_INTERVAL,
     ATTR_AREAS,
     ATTR_NEXT_STAGE,
     ATTR_NEXT_START_TIME,
@@ -75,12 +76,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     stage_data = entry.data.get(CONF_STAGE, {})
     api_key = entry.data.get(CONF_API_KEY)
     provider: SePush = SePush(token=api_key)
-    default_stage = Stage(stage_data.get(CONF_DEFAULT_SCHEDULE_STAGE, 4))
     stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
 
-    schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(
-        hass, provider, default_stage=default_stage
-    )
+    schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass, provider)
     for data in entry.data.get(CONF_AREAS, []):
         area = Area(
             id=data.get(CONF_AREA_ID),
@@ -156,9 +154,18 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.data = {}
         self.provider = provider
+        self.last_updated: datetime = None
 
     async def async_update_stage(self) -> dict:
         """Retrieve latest stage."""
+        now = datetime.now()
+        if (
+            self.last_updated
+            and (now - timedelta(microseconds=self.last_updated.microsecond)).second
+            < API_UPDATE_INTERVAL
+        ):
+            return self.data
+
         try:
             esp = await self.hass.async_add_executor_job(self.provider.status)
         except (ProviderError, StageError, Exception) as err:
@@ -203,15 +210,14 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ATTR_STAGE_FORECAST: stage_forecast,
             }
 
+        self.last_updated = now
         return self.data
 
 
 class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding schedule from Provider."""
 
-    def __init__(
-        self, hass: HomeAssistant, provider: SePush, default_stage: Stage
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, provider: SePush) -> None:
         """Initialize."""
         super().__init__(
             hass,
@@ -221,7 +227,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
         )
         self.data = {}
         self.provider = provider
-        self.default_stage = default_stage
+        self.last_updated: datetime = None
         self.areas: list[Area] = []
 
     def add_area(self, area: Area = None) -> None:
@@ -230,6 +236,13 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
 
     async def async_update_schedule(self) -> dict:
         """Retrieve schedule data."""
+        now = datetime.now()
+        if (
+            self.last_updated
+            and (now - timedelta(microseconds=self.last_updated.microsecond)).second
+            < API_UPDATE_INTERVAL
+        ):
+            return self.data
 
         areas: dict = {}
         for area in self.areas:
@@ -298,7 +311,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
             }
 
         self.data[ATTR_AREAS] = areas
-
+        self.last_updated = now
         return self.data
 
 
@@ -315,9 +328,18 @@ class LoadSheddingQuotaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.data = {}
         self.provider = provider
+        self.last_updated: datetime = None
 
     async def async_update_quota(self) -> dict:
         """Retrieve latest Quota."""
+        now = datetime.now()
+        if (
+            self.last_updated
+            and (now - timedelta(microseconds=self.last_updated.microsecond)).second
+            < API_UPDATE_INTERVAL
+        ):
+            return self.data
+
         try:
             esp = await self.hass.async_add_executor_job(self.provider.check_allowance)
         except (ProviderError, Exception) as err:
@@ -325,32 +347,5 @@ class LoadSheddingQuotaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return self.data
 
         self.data = esp.get("allowance", {})
+        self.last_updated = now
         return self.data
-
-
-async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Migrate old entry."""
-    _LOGGER.debug("Migrating from version %s", config_entry.version)
-
-    if config_entry.version == 1:
-        old = {**config_entry.data}
-        suburbs = old.get("suburbs")
-        new = {
-            CONF_STAGE: {
-                CONF_PROVIDER: Provider.ESKOM.value,
-            },
-            CONF_AREAS: [
-                {
-                    CONF_DESCRIPTION: suburbs[0].get(CONF_DESCRIPTION),
-                    CONF_AREA: suburbs[0].get("suburb"),
-                    CONF_AREA_ID: suburbs[0].get("suburb_id"),
-                    CONF_PROVIDER: Provider.ESKOM.value,
-                    CONF_PROVINCE_ID: suburbs[0].get(CONF_PROVINCE_ID),
-                }
-            ],
-        }
-        config_entry.version = 2
-        hass.config_entries.async_update_entry(config_entry, data=new)
-
-    _LOGGER.info("Migration to version %s successful", config_entry.version)
-    return True

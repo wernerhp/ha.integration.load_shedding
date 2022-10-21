@@ -13,7 +13,8 @@ DOMAIN: Final = "load_shedding"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
-DEFAULT_SCAN_INTERVAL = 5490  # 61 seconds * 90
+DEFAULT_SCAN_INTERVAL: Final = 60
+API_UPDATE_INTERVAL: Final = 5490  # 5490  # 61 seconds * 90
 
 CONF_DEFAULT_SCHEDULE_STAGE: Final = "default_schedule_stage"
 CONF_MUNICIPALITY: Final = "municipality"
