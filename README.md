@@ -2,8 +2,10 @@
 
 A Home Assistant integration to track your load schedding schedule.
 
-> ℹ️ **_NOTE:_**  This integration makes use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
-> If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
+> ℹ️ **_NOTE:_**  This integration makes use of the Eskom SePush API.  An API Key is required, which you can request from [here](https://docs.google.com/forms/d/e/1FAIpQLSeZhAkhDaQX_mLT2xn41TkVjLkOH3Py3YWHi_UqQP4niOY01g/viewform).  Select '< 50' requests and 'data serialization' for the Test
+
+>  **_TODO:_**  Update the REAMDE
+
 
 ![img_3.png](img_3.png)
 
@@ -102,6 +104,94 @@ entities:
       {% endif %}
     entity: sensor.load_shedding_milnerton
 ```
+
+![img_1.png](img_1.png)
+
+```yaml
+type: markdown
+entity_ids: 
+  - sensor.load_shedding_south_africa_stage
+  - sensor.load_shedding_milnerton_14
+content: >-
+  {% set stage_sensor = "sensor.load_shedding_south_africa_stage" %}
+  {% set area_sensor = "sensor.load_shedding_milnerton_14" %}
+
+  {% set start_time = state_attr(stage_sensor, "start_time") %}  
+  {% set end_time = state_attr(stage_sensor, "end_time") %}
+
+  {% set area_schedule = state_attr(area_sensor, "forecast") %}
+  {% if area_schedule %}
+    {% set start_time = area_schedule[0].start_time %}
+    {% set end_time = area_schedule[0].end_time %}
+    
+    {% if is_state(area_sensor, "off") %}
+      {% set starts_in = timedelta(minutes=state_attr(area_sensor, "starts_in")) %}
+      {% if is_state_attr(stage_sensor, "stage", 0) or starts_in.seconds > 86400  %}
+        <ha-alert alert-type="success">{{ states(stage_sensor) }}</ha-alert>
+      {% elif not is_state_attr(stage_sensor, "stage", 0) and 0 < starts_in.seconds <= 86400 %}
+        <ha-alert alert-type="warning">Load Shedding starts in {{ starts_in.seconds // 3600 }}h{{ (starts_in.seconds // 60) - (starts_in.seconds // 3600 * 60) }}m ({{ as_timestamp(start_time) | timestamp_custom("%H:%M", True) }})</ha-alert>
+      {% endif %}
+    {% else %}
+      {% set ends_in = timedelta(minutes=state_attr(area_sensor, "ends_in")) %}
+      {% if is_state_attr(stage_sensor, "stage", 0) or ends_in.seconds > 86400 %}
+        <ha-alert alert-type="success">{{ states(stage_sensor) }}</ha-alert>
+      {% elif not is_state_attr(stage_sensor, "stage", 0) and 0 < ends_in.seconds <= 86400 %}
+        <ha-alert alert-type="error">Load Shedding ends in {{ ends_in.seconds // 3600 }}h{{ (ends_in.seconds // 60) - (ends_in.seconds // 3600 * 60) }}m  ({{ as_timestamp(end_time) | timestamp_custom("%H:%M", True) }})</ha-alert>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+
+  {% set area_forecast = state_attr(area_sensor, "forecast" )%}
+  {% if area_forecast %}
+  <table width="100%"  border=0>
+    <tbody>
+    <tr>
+      <td width="34px"><ha-icon icon="mdi:calendar"></ha-icon></td>
+      <td align="left" colspan=3>Forecast : :  {{ state_attr(area_sensor, "friendly_name") }}</td>
+    </tr>
+    {% for forecast in area_forecast[:3] %}
+    <tr>
+      <td></td>
+      <td align="left">
+      {{ as_timestamp(forecast.start_time) | timestamp_custom("%-d %B", True) }}
+      </td>
+      <td align="left">
+      {{ as_timestamp(forecast.start_time) | timestamp_custom("%H:%M", True) }} - {{ as_timestamp(forecast.end_time) | timestamp_custom("%H:%M", True) }}
+      </td>
+      <td align="right">Stage {{ forecast.stage }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+
+  {% set area_schedule = state_attr(area_sensor, "schedule" )%}
+  {% if area_schedule %}
+  <table width="100%"  border=0>
+    <tbody>
+    <tr>
+      <td width="34px"><ha-icon icon="mdi:calendar"></ha-icon></td>
+      <td align="left" colspan=3>Schedule : : {{ state_attr(area_sensor, "friendly_name") }}</td>
+    </tr>
+    {% for slot in area_schedule[:3] %}
+    <tr>
+      <td></td>
+      <td align="left">
+      {{ as_timestamp(slot.start_time) | timestamp_custom("%-d %B", True) }}
+      </td>
+      <td align="left">
+      {{ as_timestamp(slot.start_time) | timestamp_custom("%H:%M", True) }} - {{ as_timestamp(slot.end_time) | timestamp_custom("%H:%M", True) }}
+      </td>
+      <td align="right">Stage {{ slot.stage }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+```
+
   </details>
 
 # Automation Ideas

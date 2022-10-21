@@ -54,8 +54,6 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
         return await self.async_step_sepush(None)
-        # return await self.async_step_lookup_areas(user_input)
-        # return await self.async_step_provider(user_input)
 
     async def async_step_provider(
         self, user_input: dict[str, Any] | None = None
@@ -120,16 +118,6 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             )
             self.api_key = user_input.get(CONF_API_KEY, "")
 
-        # CoCT Stage
-        # self.coct_stage = user_input.get(CONF_STAGE_COCT, "")
-        # if not self.coct_stage:
-        #     data_schema = data_schema.extend(
-        #         {
-        #             vol.Required(CONF_STAGE_COCT, default=False): bool,
-        #         }
-        #     )
-        #     self.coct_stage = user_input.get(CONF_STAGE_COCT, "")
-
         if data_schema.schema:
             return self.async_show_form(
                 step_id="sepush",
@@ -144,12 +132,6 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the flow step to search for and select an area."""
         errors = {}
-        # providers = {}
-        # default_provider = None
-        # for provider in list(Provider):
-        #     if not default_provider:
-        #         default_provider = provider.value
-        #     providers[provider.value] = f"{provider}"
 
         stages = {}
         default_stage = Stage.STAGE_4.value
@@ -166,13 +148,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             stages[stage.value] = f"{stage}"
         data_schema = vol.Schema(
             {
-                # vol.Required(CONF_PROVIDER, default=default_provider): vol.In(
-                #     providers
-                # ),
                 vol.Required(CONF_SEARCH): str,
-                # vol.Required(
-                # CONF_DEFAULT_SCHEDULE_STAGE, default=default_stage
-                # ): vol.In(stages),
             }
         )
 
@@ -183,19 +159,8 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 errors=errors,
             )
 
-        # if not user_input.get(CONF_PROVIDER):
-        #     errors["base"] = "no_provider"
-        #     return self.async_show_form(
-        #         step_id="lookup_areas",
-        #         data_schema=data_schema,
-        #         errors=errors,
-        #     )
-
         data_schema = vol.Schema(
             {
-                # vol.Required(
-                #     CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
-                # ): vol.In(providers),
                 vol.Required(CONF_SEARCH, default=user_input.get(CONF_SEARCH)): str,
             }
         )
@@ -236,27 +201,12 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 data_schema = vol.Schema(
                     {
-                        # vol.Required(
-                        #     CONF_PROVIDER, default=user_input.get(CONF_PROVIDER)
-                        # ): vol.In(providers),
                         vol.Required(
                             CONF_SEARCH, default=user_input.get(CONF_SEARCH)
                         ): str,
                         vol.Optional(CONF_AREA_ID): vol.In(area_ids),
-                        # vol.Required(
-                        # CONF_DEFAULT_SCHEDULE_STAGE,
-                        # default=user_input.get(CONF_DEFAULT_SCHEDULE_STAGE),
-                        # ): vol.In(stages),
                     }
                 )
-                # if self.provider == Provider.SE_PUSH:
-                #     data_schema.extend(
-                #         schema=vol.Schema(
-                #             {
-                #                 vol.Required(CONF_STAGE_COCT, default=False): bool,
-                #             }
-                #         )
-                #     )
 
             return self.async_show_form(
                 step_id="lookup_areas",
@@ -284,10 +234,6 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_API_KEY: self.api_key,
             CONF_STAGE: {
                 CONF_PROVIDER: self.provider.value,
-                # CONF_STAGE_COCT: self.coct_stage,
-                # CONF_DEFAULT_SCHEDULE_STAGE: user_input.get(
-                # CONF_DEFAULT_SCHEDULE_STAGE
-                # ),
             },
             CONF_AREAS: [
                 {

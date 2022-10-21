@@ -20,10 +20,9 @@
         }
       },
       "sepush": {
-        "description": "",
+        "description": "Request an [Eskom Se Push API Key](https://docs.google.com/forms/d/e/1FAIpQLSeZhAkhDaQX_mLT2xn41TkVjLkOH3Py3YWHi_UqQP4niOY01g/viewform)  \nSelect '< 50' requests and 'data serialization' for the Test.",
         "data": {
-          "api_key": "API Key / Token",
-          "coct_stage": "City of Cape Town Stages"
+          "api_key": "API Key / Token"
         }
       }
     },
