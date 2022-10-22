@@ -4,9 +4,6 @@ from __future__ import annotations
 import logging
 from datetime import timedelta, datetime, timezone
 from typing import Any
-from flask import current_app
-
-from regex import B
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -18,47 +15,37 @@ from homeassistant.const import (
 )
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from load_shedding import (
     Provider,
 )
-from load_shedding.libs.sepush import SePush
+from load_shedding.libs.sepush import SePush, SePushError
 from load_shedding.providers import (
     Area,
     Province,
-    ProviderError,
-    StageError,
     Stage,
     to_utc,
 )
 from .const import (
     API_UPDATE_INTERVAL,
     ATTR_AREAS,
-    ATTR_NEXT_STAGE,
-    ATTR_NEXT_START_TIME,
     ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_STAGE_FORECAST,
     CONF_COCT,
     CONF_ESKOM,
-    CONF_DEFAULT_SCHEDULE_STAGE,
     CONF_MUNICIPALITY,
-    CONF_PROVIDER,
     CONF_PROVINCE_ID,
-    CONF_STAGE,
-    CONF_STAGE_COCT,
     CONF_AREA,
     CONF_AREA_ID,
     CONF_AREAS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    # ATTR_STAGE_FORECAST,
     ATTR_FORECAST,
     ATTR_START_TIME,
     ATTR_END_TIME,
-    MAX_FORECAST_DAYS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,7 +60,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
-    stage_data = entry.data.get(CONF_STAGE, {})
     api_key = entry.data.get(CONF_API_KEY)
     provider: SePush = SePush(token=api_key)
     stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
@@ -160,17 +146,17 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retrieve latest stage."""
         now = datetime.now()
         if (
-            self.last_updated
-            and (now - timedelta(microseconds=self.last_updated.microsecond)).second
-            < API_UPDATE_INTERVAL
+            self.last_updated is not None
+            and (now - self.last_updated).seconds < API_UPDATE_INTERVAL
         ):
             return self.data
 
         try:
             esp = await self.hass.async_add_executor_job(self.provider.status)
-        except (ProviderError, StageError, Exception) as err:
-            _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
-            return self.data
+        except (SePushError) as err:
+            raise UpdateFailed(err) from err
+            # _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
+            # return self.data
 
         sources = esp.get("status", {})
         for source in sources:
@@ -198,7 +184,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     }
                 )
 
-            for i in range(len(stage_forecast)):
+            for i, forecast in enumerate(stage_forecast):
                 if i < len(stage_forecast) - 1:
                     stage_forecast[i][ATTR_END_TIME] = stage_forecast[i + 1][
                         ATTR_START_TIME
@@ -238,9 +224,8 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
         """Retrieve schedule data."""
         now = datetime.now()
         if (
-            self.last_updated
-            and (now - timedelta(microseconds=self.last_updated.microsecond)).second
-            < API_UPDATE_INTERVAL
+            self.last_updated is not None
+            and (now - self.last_updated).seconds < API_UPDATE_INTERVAL
         ):
             return self.data
 
@@ -252,8 +237,8 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
                 data = await self.hass.async_add_executor_job(
                     self.provider.area, area.id
                 )
-            except Exception as e:
-                raise ProviderError(e)
+            except (SePushError) as err:
+                raise UpdateFailed(err) from err
 
             for event in data.get("events", {}):
                 note = event.get("note")
@@ -278,9 +263,9 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
             for day in data.get("schedule", {}).get("days", []):
                 date = datetime.strptime(day.get("date"), "%Y-%m-%d")
                 stages = day.get("stages", [])
-                for stage in range(len(stages)):
+                for i, stage in enumerate(stages):
                     schedule = []
-                    for slot in stages[stage]:
+                    for slot in stages[i]:
                         start_str, end_str = slot.strip().split("-")
                         start = datetime.strptime(start_str, "%H:%M").replace(
                             year=date.year,
@@ -303,7 +288,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
                         schedule.append((start, end))
 
                     schedule = to_utc(schedule)
-                    stage_schedule[stage + 1] = schedule
+                    stage_schedule[i + 1] = schedule
 
             areas[area.id] = {
                 ATTR_FORECAST: forecast,
@@ -334,17 +319,17 @@ class LoadSheddingQuotaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retrieve latest Quota."""
         now = datetime.now()
         if (
-            self.last_updated
-            and (now - timedelta(microseconds=self.last_updated.microsecond)).second
-            < API_UPDATE_INTERVAL
+            self.last_updated is not None
+            and (now - self.last_updated).seconds < API_UPDATE_INTERVAL
         ):
             return self.data
 
         try:
             esp = await self.hass.async_add_executor_job(self.provider.check_allowance)
-        except (ProviderError, Exception) as err:
-            _LOGGER.debug("Unable to get Quota %s", err, exc_info=True)
-            return self.data
+        except (SePushError) as err:
+            raise UpdateFailed(err) from err
+            # _LOGGER.debug("Unable to get Quota %s", err, exc_info=True)
+            # return self.data
 
         self.data = esp.get("allowance", {})
         self.last_updated = now
