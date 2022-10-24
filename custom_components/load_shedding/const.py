@@ -7,14 +7,12 @@ from load_shedding import Stage
 
 API: Final = "API"
 ATTRIBUTION: Final = "Data provided by {provider}"
-# TODO: Make Default stage configurable in config flow.
-DEFAULT_STAGE = Stage.STAGE_4
 DOMAIN: Final = "load_shedding"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
 DEFAULT_SCAN_INTERVAL: Final = 60
-API_UPDATE_INTERVAL: Final = 5490  # 5490  # 61 seconds * 90
+API_UPDATE_INTERVAL: Final = 5400  # 60sec * 90min
 
 CONF_DEFAULT_SCHEDULE_STAGE: Final = "default_schedule_stage"
 CONF_MUNICIPALITY: Final = "municipality"

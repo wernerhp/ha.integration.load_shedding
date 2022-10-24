@@ -70,25 +70,27 @@ async def async_setup_entry(
     coordinators = hass.data.get(DOMAIN, {})
     entities: list[Entity] = []
 
+    # Stage
     stage_coordinator: LoadSheddingStageUpdateCoordinator = coordinators.get(ATTR_STAGE)
-    for data in stage_coordinator.data:
-        stage_entity = LoadSheddingStageSensorEntity(stage_coordinator, data)
+    for source in stage_coordinator.data:
+        stage_entity = LoadSheddingStageSensorEntity(stage_coordinator, source)
         entities.append(stage_entity)
 
+    # Areas
     schedule_coordinator: LoadSheddingScheduleUpdateCoordinator = coordinators.get(
         ATTR_SCHEDULE
     )
-
-    for data in entry.data.get(CONF_AREAS, {}):
+    for conf in entry.data.get(CONF_AREAS, {}):
         area = Area(
-            id=data.get(CONF_AREA_ID),
-            name=data.get(CONF_AREA),
-            municipality=data.get(CONF_MUNICIPALITY),
-            province=Province(data.get(CONF_PROVINCE_ID)),
+            id=conf.get(CONF_AREA_ID),
+            name=conf.get(CONF_AREA),
+            municipality=conf.get(CONF_MUNICIPALITY),
+            province=Province(conf.get(CONF_PROVINCE_ID)),
         )
         area_entity = LoadSheddingScheduleSensorEntity(schedule_coordinator, area)
         entities.append(area_entity)
 
+    # SePush
     quota_coordinator: LoadSheddingQuotaUpdateCoordinator = coordinators.get(ATTR_QUOTA)
     quota_entity = LoadSheddingQuotaSensorEntity(quota_coordinator)
     entities.append(quota_entity)

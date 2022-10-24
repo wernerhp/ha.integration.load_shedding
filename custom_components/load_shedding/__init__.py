@@ -61,10 +61,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
     api_key = entry.data.get(CONF_API_KEY)
-    provider: SePush = SePush(token=api_key)
-    stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, provider)
+    sepush: SePush = SePush(token=api_key)
+    stage_coordinator = LoadSheddingStageUpdateCoordinator(hass, sepush)
 
-    schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass, provider)
+    schedule_coordinator = LoadSheddingScheduleUpdateCoordinator(hass, sepush)
     for data in entry.data.get(CONF_AREAS, []):
         area = Area(
             id=data.get(CONF_AREA_ID),
@@ -74,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         schedule_coordinator.add_area(area)
 
-    quota_coordinator = LoadSheddingQuotaUpdateCoordinator(hass, provider)
+    quota_coordinator = LoadSheddingQuotaUpdateCoordinator(hass, sepush)
 
     hass.data[DOMAIN] = {
         ATTR_STAGE: stage_coordinator,
@@ -130,7 +130,7 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding stage from Provider."""
 
-    def __init__(self, hass: HomeAssistant, provider: SePush) -> None:
+    def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
         """Initialize."""
         super().__init__(
             hass,
@@ -139,7 +139,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_method=self.async_update_stage,
         )
         self.data = {}
-        self.provider = provider
+        self.sepush = sepush
         self.last_updated: datetime = None
 
     async def async_update_stage(self) -> dict:
@@ -152,47 +152,46 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return self.data
 
         try:
-            esp = await self.hass.async_add_executor_job(self.provider.status)
+            data = await self.hass.async_add_executor_job(self.sepush.status)
         except (SePushError) as err:
-            raise UpdateFailed(err) from err
-            # _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
+            _LOGGER.debug("Unable to get stage %s", err, exc_info=True)
             # return self.data
+            raise UpdateFailed(err) from err
 
-        sources = esp.get("status", {})
-        for source in sources:
-            key = CONF_ESKOM
-            if source == "capetown":
-                key = CONF_COCT
+        statuses = data.get("status", {})
+        for source in statuses:
+            status = statuses.get(source)
 
-            data = sources.get(source)
-
+            current_stage = Stage(int(status.get("stage", "0")))
+            current_start = datetime.fromisoformat(status.get("stage_updated"))
             stage_forecast = [
                 {
-                    ATTR_STAGE: Stage(int(data.get("stage", "0"))),
-                    ATTR_START_TIME: datetime.fromisoformat(
-                        data.get("stage_updated")
-                    ).astimezone(timezone.utc),
+                    ATTR_STAGE: current_stage,
+                    ATTR_START_TIME: current_start.astimezone(timezone.utc),
                 }
             ]
-            for next_stage in data.get("next_stages", []):
+
+            next_stages = status.get("next_stages", [])
+            for i, next_stage in enumerate(next_stages):
+                # Prev
+                prev_end = datetime.fromisoformat(
+                    next_stage.get("stage_start_timestamp")
+                )
+                stage_forecast[i][ATTR_END_TIME] = prev_end.astimezone(timezone.utc)
+
+                # Next
+                stage = Stage(int(next_stage.get("stage", "0")))
+                start = datetime.fromisoformat(next_stage.get("stage_start_timestamp"))
                 stage_forecast.append(
                     {
-                        ATTR_STAGE: Stage(int(next_stage.get("stage", "0"))),
-                        ATTR_START_TIME: datetime.fromisoformat(
-                            next_stage.get("stage_start_timestamp")
-                        ).astimezone(timezone.utc),
+                        ATTR_STAGE: stage,
+                        ATTR_START_TIME: start.astimezone(timezone.utc),
                     }
                 )
 
-            for i, forecast in enumerate(stage_forecast):
-                if i < len(stage_forecast) - 1:
-                    stage_forecast[i][ATTR_END_TIME] = stage_forecast[i + 1][
-                        ATTR_START_TIME
-                    ]
-
-            self.data[key] = {
-                ATTR_NAME: data.get("name", ""),
-                ATTR_STAGE: Stage(int(data.get("stage", "0"))),
+            self.data[source] = {
+                ATTR_NAME: status.get("name", ""),
+                ATTR_STAGE: current_stage,
                 ATTR_STAGE_FORECAST: stage_forecast,
             }
 
@@ -203,7 +202,7 @@ class LoadSheddingStageUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding schedule from Provider."""
 
-    def __init__(self, hass: HomeAssistant, provider: SePush) -> None:
+    def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
         """Initialize."""
         super().__init__(
             hass,
@@ -212,7 +211,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
             update_method=self.async_update_schedule,
         )
         self.data = {}
-        self.provider = provider
+        self.sepush = sepush
         self.last_updated: datetime = None
         self.areas: list[Area] = []
 
@@ -234,10 +233,9 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
             # Get foreacast for area
             forecast = []
             try:
-                data = await self.hass.async_add_executor_job(
-                    self.provider.area, area.id
-                )
+                data = await self.hass.async_add_executor_job(self.sepush.area, area.id)
             except (SePushError) as err:
+                _LOGGER.debug("Unable to get schedule %s", err, exc_info=True)
                 raise UpdateFailed(err) from err
 
             for event in data.get("events", {}):
@@ -303,7 +301,7 @@ class LoadSheddingScheduleUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]
 class LoadSheddingQuotaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to check Provider quota."""
 
-    def __init__(self, hass: HomeAssistant, provider: SePush) -> None:
+    def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
         """Initialize."""
         super().__init__(
             hass,
@@ -312,7 +310,7 @@ class LoadSheddingQuotaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_method=self.async_update_quota,
         )
         self.data = {}
-        self.provider = provider
+        self.sepush = sepush
         self.last_updated: datetime = None
 
     async def async_update_quota(self) -> dict:
@@ -325,12 +323,21 @@ class LoadSheddingQuotaUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return self.data
 
         try:
-            esp = await self.hass.async_add_executor_job(self.provider.check_allowance)
+            data = await self.hass.async_add_executor_job(self.sepush.check_allowance)
         except (SePushError) as err:
-            raise UpdateFailed(err) from err
-            # _LOGGER.debug("Unable to get Quota %s", err, exc_info=True)
+            _LOGGER.debug("Unable to get quota %s", err, exc_info=True)
             # return self.data
+            raise UpdateFailed(err) from err
+        else:
+            self.data = data.get("allowance", {})
 
-        self.data = esp.get("allowance", {})
         self.last_updated = now
         return self.data
+
+
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old entry."""
+    _LOGGER.debug("Migrating from version %s", config_entry.version)
+
+    _LOGGER.info("Migration to version %s successful", config_entry.version)
+    return True

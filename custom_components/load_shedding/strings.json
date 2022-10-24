@@ -20,7 +20,7 @@
         }
       },
       "sepush": {
-        "description": "Request an [Eskom Se Push API Key](https://docs.google.com/forms/d/e/1FAIpQLSeZhAkhDaQX_mLT2xn41TkVjLkOH3Py3YWHi_UqQP4niOY01g/viewform)  \nSelect '< 50' requests and 'data serialization' for the Test.",
+        "description": "Request an API Key / Token from [Eskom Se Push](https://docs.google.com/forms/d/e/1FAIpQLSeZhAkhDaQX_mLT2xn41TkVjLkOH3Py3YWHi_UqQP4niOY01g/viewform)  \n**How do you plan to use it?** Home Automations\n**Estimated request count per day** < 50\n**Test: If someone was talking about Jason, in the context of an API, they'd be talking about:** data serialization",
         "data": {
           "api_key": "API Key / Token"
         }
@@ -30,11 +30,31 @@
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "provider_error": "Unable to reach Provider.  See Logs for details.",
       "no_results_found": "No results found.  Try searching for a different area with the same schedule as yours or choose a different provider.",
-      "no_provider": "No provider selected."
+      "no_provider": "No provider selected.",
+      "sepush_400": "Bad request. Create a issue for the integration and include logs.",
+      "sepush_403": "Invalid API Key / Token",
+      "sepush_429": "Token quota exceeded",
+      "sepush_500": "SePush server unavailable"
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]"
+    }
+  },
+  "options": {
+    "step": {
+      "lookup_areas": {
+        "description": "Search your area name, e.g. Milnerton, then select your area ID from the results.",
+        "data": {
+          "provider": "Provider",
+          "province": "Province",
+          "results": "Results",
+          "search": "Search",
+          "default_schedule": "Default Schedule",
+          "area": "Area",
+          "area_id": "Area"
+        }
+      }
     }
   }
 }
