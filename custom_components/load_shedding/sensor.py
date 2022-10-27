@@ -17,6 +17,8 @@ from homeassistant.const import (
     ATTR_VIA_DEVICE,
     CONF_API_KEY,
     CONF_DESCRIPTION,
+    CONF_ID,
+    CONF_NAME,
     CONF_SCAN_INTERVAL,
     EVENT_HOMEASSISTANT_STARTED,
     STATE_OFF,
@@ -40,7 +42,6 @@ from load_shedding.providers import Area, Province, Stage, to_utc
 from .const import (
     API,
     API_UPDATE_INTERVAL,
-    ATTR_AREAS,
     ATTR_END_IN,
     ATTR_END_TIME,
     ATTR_FORECAST,
@@ -55,15 +56,10 @@ from .const import (
     ATTR_START_IN,
     ATTR_START_TIME,
     ATTRIBUTION,
-    CONF_AREA,
-    CONF_AREA_ID,
     CONF_AREAS,
-    CONF_MUNICIPALITY,
-    CONF_PROVINCE_ID,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     MANUFACTURER,
-    MAX_FORECAST_DAYS,
     NAME,
 )
 
@@ -97,45 +93,21 @@ async def async_setup_entry(
     coordinator.update_interval = timedelta(
         seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
-    for data in entry.data.get(CONF_AREAS, []):
+    for conf in entry.options.get(CONF_AREAS, []).values():
         area = Area(
-            id=data.get(CONF_AREA_ID),
-            name=data.get(CONF_AREA),
-            municipality=data.get(CONF_MUNICIPALITY),
-            province=Province(data.get(CONF_PROVINCE_ID)),
+            id=conf.get(CONF_ID),
+            name=conf.get(CONF_NAME),
         )
         coordinator.add_area(area)
 
-    # async def _schedule_updates(*_):
-    #     """Activate the data update coordinators."""
-    #     coordinator.update_interval = timedelta(
-    #         seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    #     )
-    #     await coordinator.async_refresh()
-
-    # if hass.state == CoreState.running:
-    #     await _schedule_updates()
-    # else:
-    #     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _schedule_updates)
     await coordinator.async_config_entry_first_refresh()
 
     entities: list[Entity] = []
-
-    # async_add_entities(
-    #     LoadSheddingStageSensorEntity(coordinator, idx) for idx, ent in enumerate(coordinator.data.get(ATTR_STAGE))
-    # )
-
     for idx in coordinator.data.get(ATTR_STAGE):
         stage_entity = LoadSheddingStageSensorEntity(coordinator, idx)
         entities.append(stage_entity)
 
-    for conf in entry.data.get(CONF_AREAS, {}):
-        area = Area(
-            id=conf.get(CONF_AREA_ID),
-            name=conf.get(CONF_AREA),
-            municipality=conf.get(CONF_MUNICIPALITY),
-            province=Province(conf.get(CONF_PROVINCE_ID)),
-        )
+    for area in coordinator.areas:
         area_entity = LoadSheddingScheduleSensorEntity(coordinator, area)
         entities.append(area_entity)
 
@@ -158,12 +130,7 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
         """Initialize."""
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=f"{DOMAIN}",
-            # update_method=self.async_update,
-        )
+        super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
         self.data = {}
         self.sepush = sepush
         self.areas: list[Area] = []
@@ -391,7 +358,7 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
     def native_value(self) -> StateType:
         """Return the stage state."""
         self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
-        if self.data:
+        if self.data and self.data.get(ATTR_FORECAST, []):
             stage = self.data.get(ATTR_FORECAST)[0].get(ATTR_STAGE, Stage.UNKNOWN)
             if stage in [Stage.UNKNOWN]:
                 return self._state
@@ -405,11 +372,9 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         if not self.data:
             return self._attrs
 
-        # stage = self.data.get(ATTR_STAGE, Stage.UNKNOWN)
-        # if stage in [Stage.UNKNOWN]:
-        #     return self._attrs
-
         stage_forecast = self.data.get(ATTR_FORECAST, [])
+        if not stage_forecast:
+            return self._attrs
 
         now = datetime.now(timezone.utc)
         data = get_sensor_attrs(stage_forecast, stage_forecast[0].get(ATTR_STAGE))

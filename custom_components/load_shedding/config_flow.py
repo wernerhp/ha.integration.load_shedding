@@ -260,8 +260,8 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_AREAS: {
                 area.id: {
                     CONF_DESCRIPTION: description,
-                    CONF_AREA: area.name,
-                    CONF_AREA_ID: area.id,
+                    CONF_NAME: area.name,
+                    CONF_ID: area.id,
                 },
             },
         }

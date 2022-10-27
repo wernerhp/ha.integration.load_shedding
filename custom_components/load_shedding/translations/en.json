@@ -37,7 +37,7 @@
                 "data": {
                     "api_key": "API Key / Token"
                 },
-                "description": "Request an API Key / Token from [Eskom Se Push](https://docs.google.com/forms/d/e/1FAIpQLSeZhAkhDaQX_mLT2xn41TkVjLkOH3Py3YWHi_UqQP4niOY01g/viewform)  \n**How do you plan to use it?** Home Automations\n**Estimated request count per day** < 50\n**Test: If someone was talking about Jason, in the context of an API, they'd be talking about:** data serialization"
+                "description": "Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api)."
             }
         }
     },
