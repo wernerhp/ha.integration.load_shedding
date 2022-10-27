@@ -2,10 +2,9 @@
 
 A Home Assistant integration to track your load schedding schedule.
 
-> ℹ️ **_NOTE:_**  This integration makes use of the Eskom SePush API.  An API Key is required, which you can request from [here](https://docs.google.com/forms/d/e/1FAIpQLSeZhAkhDaQX_mLT2xn41TkVjLkOH3Py3YWHi_UqQP4niOY01g/viewform).  Select '< 50' requests and 'data serialization' for the Test
-
->  **_TODO:_**  Update the REAMDE
-
+> ℹ️ **_NOTE:_**  Versions of this integration before v0.6.0 make use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
+> If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
+>  Version v0.6.1 makes use of Eskom SePush API.  You can sign up for $0 monthly key [here](https://eskomsepush.gumroad.com/l/api). The free key has a request limit of 50 API calls per day. Keep this in mind when using the integration. You can also pay to get a higher request limit.
 
 ![img_3.png](img_3.png)
 
