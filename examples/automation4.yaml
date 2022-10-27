@@ -1,0 +1,23 @@
+alias: Load Shedding (End)
+description: ''
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.load_shedding_stage
+    from: 'on'
+    to: 'off'
+condition:
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: sensor.load_shedding_stage
+        state: Unknown
+      - condition: state
+        entity_id: sensor.load_shedding_stage
+        state: No Load Shedding
+action:
+  - service: rest_command.slack_status
+    data:
+      emoji: ':speech_balloon:'
+      status: is typing...
+mode: single

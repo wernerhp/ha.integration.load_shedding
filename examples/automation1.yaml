@@ -1,0 +1,55 @@
+alias: Load Shedding (Stage)
+description: ''
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.load_shedding_stage
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.from_state.state != 'unavailable' and trigger.to_state.state != 'unavailable' }}
+action:
+  - choose:
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: time
+                after: input_datetime.sleep
+                weekday:
+                  - mon
+                  - tue
+                  - wed
+                  - thu
+                  - fri
+                  - sat
+                  - sun
+              - condition: time
+                before: input_datetime.wake
+                weekday:
+                  - sun
+                  - sat
+                  - fri
+                  - thu
+                  - wed
+                  - tue
+                  - mon
+        sequence:
+          - wait_for_trigger:
+              - platform: time
+                at: input_datetime.wake
+            continue_on_timeout: false
+    default: []
+  - service: notify.mobile_app_nokia_8_sirocco
+    data:
+      title: Load Shedding
+      message: '{{ states.sensor.load_shedding_stage.state }}'
+  - service: tts.home_assistant_say
+    data:
+      entity_id: media_player.assistant_speakers
+      cache: true
+      message: >-
+        {% if is_state("sensor.load_shedding_stage", "No Load Shedding") %} Load
+        Shedding suspended {% else %} Load Shedding {{
+        states.sensor.load_shedding_stage.state }} {% endif %}
+    enabled: false
+mode: single

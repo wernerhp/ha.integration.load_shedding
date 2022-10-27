@@ -1,0 +1,26 @@
+alias: Load Shedding (Start)
+description: ''
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.load_shedding_milnerton
+    to: 'on'
+    from: 'off'
+condition:
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: sensor.load_shedding_stage
+        state: Unknown
+      - condition: state
+        entity_id: sensor.load_shedding_stage
+        state: No Load Shedding
+action:
+  - service: rest_command.slack_status
+    data:
+      emoji: ':loadsheddingtransparent:'
+      status: >-
+        Load Shedding until {{
+        (state_attr('sensor.load_shedding_milnerton','end_time') | as_datetime |
+        as_local).strftime('%H:%M (%Z)') }}
+mode: single

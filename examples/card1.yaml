@@ -1,0 +1,21 @@
+type: entities
+entities:
+  - type: custom:template-entity-row
+    icon: mdi:lightning-bolt-outline
+    name: Status
+    entity: sensor.load_shedding_stage
+    active: '{{ not is_state("sensor.load_shedding_stage", "No Load Shedding") }}'
+    state: '{{states("sensor.load_shedding_stage")}}'
+  - type: custom:template-entity-row
+    icon: mdi:timer-outline
+    name: Milnerton
+    active: '{{ states("sensor.load_shedding_milnerton") == "on" }}'
+    state: >-
+      {{ (state_attr("sensor.load_shedding_milnerton", "start_time") | as_datetime | as_local).strftime("%H:%M") }}  -  {{ (state_attr("sensor.load_shedding_milnerton", "end_time") | as_datetime | as_local).strftime("%H:%M") }}
+    secondary: >-
+      {% if states("sensor.load_shedding_milnerton") == "off" %}
+      Starts in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton", "starts_in")) }}
+      {% else %}
+      Ends in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton", "ends_in")) }}
+      {% endif %}
+    entity: sensor.load_shedding_milnerton

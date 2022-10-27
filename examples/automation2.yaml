@@ -1,0 +1,36 @@
+alias: Load Shedding (Warning)
+description: ''
+trigger:
+  - platform: template
+    value_template: >-
+      {{ timedelta(minutes=(state_attr("sensor.load_shedding_milnerton", "starts_in"))) == timedelta(minutes=15) }}
+condition:
+  - condition: and
+    conditions:
+      - condition: time
+        after: input_datetime.alarm
+        before: input_datetime.sleep
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: sensor.load_shedding_stage
+            state: Unknown
+          - condition: state
+            entity_id: sensor.load_shedding_stage
+            state: No Load Shedding
+action:
+  - service: telegram_bot.send_message
+    data:
+      message: Load Shedding starts in 15 minutes.
+      title: Load Shedding
+  - service: media_player.volume_set
+    data:
+      volume_level: 0.7
+    target:
+      entity_id: media_player.assistant_speakers
+  - service: tts.home_assistant_say
+    data:
+      entity_id: media_player.assistant_speakers
+      message: Load Shedding starts in 15 minutes.
+      cache: true
+mode: single
