@@ -621,6 +621,8 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
 def clean(data: dict) -> dict:
     """Remove default values from dict"""
     for (key, value) in DEFAULT_DATA.items():
+        if key not in data:
+            continue
         if data[key] == value:
             del data[key]
 
