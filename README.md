@@ -1,17 +1,15 @@
-# Load Shedding
+# Load Shedding [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 
 A Home Assistant integration to track your load schedding schedule.
 
-> ℹ️ **_NOTE:_**  Prior to v0.6.0 this integration made use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
->
-> If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
->
->  v0.6.1 makes use of Eskom SePush API.  Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).  The free key has a request limit of 50 API calls per day. Keep this in mind when using the integration. You can also pay to get a higher request limit.
-
 ![img_8.png](img_8.png)
 
-# HACS
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+> ℹ️ **_NOTE:_**  Prior to v1.0.0 this integration made use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
+> If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
+
+>  v1.0.0 uses the Eskom SePush API.  Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).  You can also pay to get a higher request limit.
+
+# HACS Install 
 1. Go to HACS Integrations on your Home Assitant instance
 2. Select "+ Explore & Download Repositories" and search for "Load Shedding"
 3. Select "Load Shedding" and "Download this repository with HACS"
@@ -19,16 +17,22 @@ A Home Assistant integration to track your load schedding schedule.
 4. Once downloaded, click the "My Integrations" button to configure the integration.  
 [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=load_shedding)
 5. Setup cards and automations
-6. If you find this integration useful, please consider buying me a coffee.
+6. [Support](https://github.com/wernerhp/ha.integration.load_shedding/blob/master/README.md#support)
 
-<a href="https://www.buymeacoffee.com/wernerhp" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a> 
+# Support 
+If you find this integration useful, please consider supporting my work by [buying me a coffee](https://www.buymeacoffee.com/wernerhp) or making a donation in the form of Bitcoin.
 
-![img_9.png](img_9.png)  
-Bitcoin: 3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE
+<a href="https://www.buymeacoffee.com/wernerhp" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
+
+Sign-up for a free Luno wallet using [this invite link](http://www.luno.com/invite/X48WY) or enter the code **X48WY** in the **Rewards** section and we can both earn **R 25.00 free BTC** after investing our first R 500.
+
+**Bitcoin** `3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE`
+
+![](img_9.png)
 
 # Manual Install
 <details>
-<summary>Expand</summary>
+<summary>Instructions</summary>
 
 1. Download and unzip to your Home Assistant `config/custom_components` folder.
   <details>
