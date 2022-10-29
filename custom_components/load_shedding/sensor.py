@@ -15,16 +15,13 @@ from homeassistant.const import (
     ATTR_MODEL,
     ATTR_NAME,
     ATTR_VIA_DEVICE,
-    CONF_API_KEY,
-    CONF_DESCRIPTION,
     CONF_ID,
     CONF_NAME,
     CONF_SCAN_INTERVAL,
-    EVENT_HOMEASSISTANT_STARTED,
     STATE_OFF,
     STATE_ON,
 )
-from homeassistant.core import CoreState, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -35,9 +32,9 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from load_shedding import Provider, Stage
+from load_shedding import Stage
 from load_shedding.libs.sepush import SePush, SePushError
-from load_shedding.providers import Area, Province, Stage, to_utc
+from load_shedding.providers import Area, Stage, to_utc
 
 from .const import (
     API,
@@ -421,7 +418,6 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         )
 
         self.entity_description = description
-        # self._device_id = "loadshedding.eskom.co.za"
         self._device_id = f"{NAME}"
         self._state: StateType = None
         self._attrs = {}
@@ -469,45 +465,9 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not self.data:
             return self._attrs
 
-        data = self._attrs
-
-        data = []
         now = datetime.now(timezone.utc)
-        # stage_schedule = self.data.get(self.area.id, []).get(ATTR_SCHEDULE)
-        # for stage in stage_schedule:
-        #     for s in stage_schedule[stage]:
-        #         start_time = s[0]
-        #         end_time = s[1]
-
-        #         if start_time > now + timedelta(days=MAX_FORECAST_DAYS):
-        #             continue
-
-        #         if end_time < now:
-        #             continue
-
-        #         data.append(
-        #             {
-        #                 ATTR_STAGE: Stage(stage),
-        #                 ATTR_START_TIME: start_time,
-        #                 ATTR_END_TIME: end_time,
-        #             }
-        #         )
-
-        # area_schedule = data
-
-        # if area_schedule:
-        #     data = get_sensor_attrs(area_schedule)
-        #     data[ATTR_SCHEDULE] = []
-        #     for s in area_schedule:
-        #         data[ATTR_SCHEDULE].append(
-        #             {
-        #                 ATTR_STAGE: s.get(ATTR_STAGE).value,
-        #                 ATTR_START_TIME: s.get(ATTR_START_TIME).isoformat(),
-        #                 ATTR_END_TIME: s.get(ATTR_END_TIME).isoformat(),
-        #             }
-        #         )
-
-        area_forecast = self.data.get(self.area.id, []).get(ATTR_FORECAST)
+        data = self._attrs
+        area_forecast = self.data.get(self.area.id, {}).get(ATTR_FORECAST)
         if area_forecast:
             data = get_sensor_attrs(area_forecast)
             data[ATTR_FORECAST] = []
