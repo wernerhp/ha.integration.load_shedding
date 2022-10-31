@@ -79,21 +79,21 @@ I created this card with the help of [template-entity-row](https://github.com/th
 <details>
   <summary>Card 1</summary>
 
-[Code](examples/card2.yaml)  
+[Code](examples/card1.yaml)  
 ![img.png](img.png)
 </details>
 
 <details>
   <summary>Card 2</summary>
 
-[Code](examples/card3.yaml)  
+[Code](examples/card2.yaml)  
 ![img_1.png](img_1.png)
 </details>
 
 <details>
-  <summary>Card 3 (v0.6.0)</summary>
+  <summary>Card 3</summary>
 
-[Code](examples/card2.yaml)  
+[Code](examples/card3.yaml)  
 ![img_2.png](img_2.png)  
 </details>
 

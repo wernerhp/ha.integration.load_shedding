@@ -3,19 +3,19 @@ entities:
   - type: custom:template-entity-row
     icon: mdi:lightning-bolt-outline
     name: Status
-    entity: sensor.load_shedding_stage
-    active: '{{ not is_state("sensor.load_shedding_stage", "No Load Shedding") }}'
-    state: '{{states("sensor.load_shedding_stage")}}'
+    entity: sensor.load_shedding_eskom_stage
+    active: '{{ not is_state("sensor.load_shedding_eskom_stage", "No Load Shedding") }}'
+    state: '{{states("sensor.load_shedding_eskom_stage")}}'
   - type: custom:template-entity-row
     icon: mdi:timer-outline
     name: Milnerton
-    active: '{{ states("sensor.load_shedding_milnerton") == "on" }}'
+    active: '{{ states("sensor.load_shedding_milnerton_14") == "on" }}'
     state: >-
-      {{ (state_attr("sensor.load_shedding_milnerton", "start_time") | as_datetime | as_local).strftime("%H:%M") }}  -  {{ (state_attr("sensor.load_shedding_milnerton", "end_time") | as_datetime | as_local).strftime("%H:%M") }}
+      {{ (state_attr("sensor.load_shedding_milnerton_14", "start_time") | as_datetime | as_local).strftime("%H:%M") }}  -  {{ (state_attr("sensor.load_shedding_milnerton_14", "end_time") | as_datetime | as_local).strftime("%H:%M") }}
     secondary: >-
-      {% if states("sensor.load_shedding_milnerton") == "off" %}
-      Starts in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton", "starts_in")) }}
+      {% if states("sensor.load_shedding_milnerton_14") == "off" %}
+      Starts in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton_14", "starts_in")) }}
       {% else %}
-      Ends in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton", "ends_in")) }}
+      Ends in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton_14", "ends_in")) }}
       {% endif %}
-    entity: sensor.load_shedding_milnerton
+    entity: sensor.load_shedding_milnerton_14

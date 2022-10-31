@@ -1,22 +1,22 @@
 type: vertical-stack
 cards:
+  - type: entities
+    entities:
+      - entity: sensor.load_shedding_cape_town_stage
+      - entity: sensor.load_shedding_eskom_stage
   - type: markdown
     content: >
       {% set stage_sensor = "sensor.load_shedding_south_africa_stage" %}
-
       {% set area_sensor = "sensor.load_shedding_milnerton_14" %}
 
-
-
-      {% set start_time = state_attr(stage_sensor, "start_time") %}  {% set
-      end_time = state_attr(stage_sensor, "end_time") %}
+      {% set start_time = state_attr(stage_sensor, "start_time") %}
+      {% set end_time = state_attr(stage_sensor, "end_time") %}
 
       {% set area_schedule = state_attr(area_sensor, "forecast") %}
-
       {% if area_schedule %}
         {% set start_time = area_schedule[0].start_time %}
         {% set end_time = area_schedule[0].end_time %}
-        
+
         {% if is_state(area_sensor, "off") %}
           {% set starts_in = timedelta(minutes=state_attr(area_sensor, "starts_in")) %}
           {% if is_state_attr(stage_sensor, "stage", 0) or starts_in.seconds > 86400  %}
@@ -36,13 +36,16 @@ cards:
 
 
       {% set area_forecast = state_attr(area_sensor, "forecast" )%}
-
       {% if area_forecast %}
-
       <table width="100%"  border=0>
         <tbody>
+        <tr>
+          <td width="34px"><ha-icon icon="mdi:calendar"></ha-icon></td>
+          <td align="left" colspan=3>Forecast : :  {{ state_attr(area_sensor, "friendly_name") }}</td>
+        </tr>
         {% for forecast in area_forecast[:3] %}
         <tr>
+          <td></td>
           <td align="left">
           {{ as_timestamp(forecast.start_time) | timestamp_custom("%-d %B", True) }}
           </td>
@@ -54,16 +57,29 @@ cards:
         {% endfor %}
         </tbody>
       </table>
-
       {% endif %}
-  - type: custom:mushroom-template-card
-    primary: Quota {{state_attr(entity, "count")}}/{{state_attr(entity, "limit")}}
-    secondary: ''
-    icon: mdi:lightning-bolt
-    entity: sensor.load_shedding_sepush_quota
-    tap_action:
-      action: more-info
-    icon_color: ''
-    badge_icon: ''
-    fill_container: false
-    multiline_secondary: false
+
+
+      {% set area_schedule = state_attr(area_sensor, "schedule" )%}
+      {% if area_schedule %}
+      <table width="100%"  border=0>
+        <tbody>
+        <tr>
+          <td width="34px"><ha-icon icon="mdi:calendar"></ha-icon></td>
+          <td align="left" colspan=3>Schedule : : {{ state_attr(area_sensor, "friendly_name") }}</td>
+        </tr>
+        {% for slot in area_schedule[:3] %}
+        <tr>
+          <td></td>
+          <td align="left">
+          {{ as_timestamp(slot.start_time) | timestamp_custom("%-d %B", True) }}
+          </td>
+          <td align="left">
+          {{ as_timestamp(slot.start_time) | timestamp_custom("%H:%M", True) }} - {{ as_timestamp(slot.end_time) | timestamp_custom("%H:%M", True) }}
+          </td>
+          <td align="right">Stage {{ slot.stage }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
