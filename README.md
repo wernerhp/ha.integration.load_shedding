@@ -75,7 +75,7 @@ i.e When load shedding is suspended, it will show **No Load Shedding**.  When St
   </details>
 
 # Cards
-I created this card with the help of [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row)  
+I created this card with the help of [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row) and [🍄 Mushroom](https://github.com/piitaya/lovelace-mushroom)  
 <details>
   <summary>Card 1</summary>
 
