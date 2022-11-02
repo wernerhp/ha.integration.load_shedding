@@ -3,14 +3,13 @@ from __future__ import annotations
 
 from typing import Final
 
-from load_shedding import Stage
-
 API: Final = "API"
 ATTRIBUTION: Final = "Data provided by {provider}"
 DOMAIN: Final = "load_shedding"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
+VERSION: Final = "1.1.0"
 DEFAULT_SCAN_INTERVAL: Final = 60
 API_UPDATE_INTERVAL: Final = 5400  # 60sec * 90min
 

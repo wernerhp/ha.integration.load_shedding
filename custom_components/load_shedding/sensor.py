@@ -1,44 +1,28 @@
 """Support for the LoadShedding service."""
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import RestoreSensor, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ATTRIBUTION,
-    ATTR_IDENTIFIERS,
-    ATTR_MANUFACTURER,
-    ATTR_MODEL,
-    ATTR_NAME,
-    ATTR_VIA_DEVICE,
-    CONF_ID,
-    CONF_NAME,
-    CONF_SCAN_INTERVAL,
     STATE_OFF,
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo, Entity
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
 )
 
-from load_shedding import Stage
-from load_shedding.libs.sepush import SePush, SePushError
-from load_shedding.providers import Area, Stage, to_utc
-
+from load_shedding.providers import Area, Stage
+from . import LoadSheddingDevice
 from .const import (
-    API,
-    API_UPDATE_INTERVAL,
     ATTR_END_IN,
     ATTR_END_TIME,
     ATTR_FORECAST,
@@ -49,20 +33,12 @@ from .const import (
     ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
-    ATTR_STAGE_FORECAST,
     ATTR_START_IN,
     ATTR_START_TIME,
     ATTRIBUTION,
-    CONF_AREAS,
-    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    MANUFACTURER,
     NAME,
 )
-
-_LOGGER = logging.getLogger(__name__)
-
-PLATFORMS = ["sensor"]
 
 DEFAULT_DATA = {
     ATTR_STAGE: 0,
@@ -79,25 +55,18 @@ DEFAULT_DATA = {
     ATTR_ATTRIBUTION: ATTRIBUTION.format(provider="sepush.co.za"),
 }
 
+CLEAN_DATA = {
+    ATTR_FORECAST: [],
+    ATTR_SCHEDULE: [],
+}
+
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+        hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
-    sepush = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-
-    coordinator = LoadSheddingCoordinator(hass, sepush)
-    coordinator.update_interval = timedelta(
-        seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    )
-    for conf in entry.options.get(CONF_AREAS, []).values():
-        area = Area(
-            id=conf.get(CONF_ID),
-            name=conf.get(CONF_NAME),
-        )
-        coordinator.add_area(area)
-
-    await coordinator.async_config_entry_first_refresh()
+    # coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
 
     entities: list[Entity] = []
     for idx in coordinator.data.get(ATTR_STAGE):
@@ -114,209 +83,14 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Unload Load Shedding Entry from config_entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        config_entry, PLATFORMS
-    )
-    return unload_ok
-
-
-class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Class to manage fetching LoadShedding stage from Provider."""
-
-    def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
-        """Initialize."""
-        super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
-        self.data = {}
-        self.sepush = sepush
-        self.areas: list[Area] = []
-        self.last_update: datetime = None
-
-    def add_area(self, area: Area = None) -> None:
-        """Add a area to update."""
-        self.areas.append(area)
-
-    async def _async_update_data(self) -> dict:
-        """Retrieve latest load shedding data."""
-
-        self.now = datetime.now(timezone.utc).replace(microsecond=0)
-        now = datetime.now(timezone.utc).replace(microsecond=0)
-        diff = 0
-        if self.last_update is not None:
-            diff = (now - self.last_update).seconds
-
-        _LOGGER.debug("Now: %s, Last Update: %s, Diff: %s", now, self.last_update, diff)
-        if 0 < diff < API_UPDATE_INTERVAL:
-            next_update = self.last_update + timedelta(seconds=API_UPDATE_INTERVAL)
-            _LOGGER.debug(
-                "Last update @ %s, Next update @ %s", self.last_update, next_update
-            )
-            return self.data
-
-        try:
-            data = await self.async_update_stage()
-        except UpdateFailed as err:
-            _LOGGER.error("Unable to get stage: %s", err, exc_info=True)
-            self.data[ATTR_STAGE] = {}
-        else:
-            self.data[ATTR_STAGE] = data
-            self.last_update = now
-
-        try:
-            data = await self.async_update_schedule()
-        except UpdateFailed as err:
-            _LOGGER.error("Unable to get schedule: %s", err, exc_info=True)
-            self.data[ATTR_SCHEDULE] = []
-        else:
-            self.data[ATTR_SCHEDULE] = data
-            self.last_update = now
-
-        try:
-            data = await self.async_update_quota()
-        except UpdateFailed as err:
-            _LOGGER.error("Unable to get quota: %s", err, exc_info=True)
-            self.data[ATTR_QUOTA] = {}
-        else:
-            self.data[ATTR_QUOTA] = data
-            self.last_update = now
-
-        return self.data
-
-    async def async_update_stage(self) -> dict:
-        """Retrieve latest stage."""
-        try:
-            data = await self.hass.async_add_executor_job(self.sepush.status)
-        except (SePushError) as err:
-            raise UpdateFailed(err) from err
-        else:
-            area_forecast = {}
-            statuses = data.get("status", {})
-            for idx, area in statuses.items():
-                forecast = [
-                    {
-                        ATTR_STAGE: Stage(int(area.get("stage", "0"))),
-                        ATTR_START_TIME: datetime.fromisoformat(
-                            area.get("stage_updated")
-                        ).astimezone(timezone.utc),
-                    }
-                ]
-
-                next_stages = area.get("next_stages", [])
-                for i, next_stage in enumerate(next_stages):
-                    # Prev
-                    prev_end = datetime.fromisoformat(
-                        next_stage.get("stage_start_timestamp")
-                    )
-                    forecast[i][ATTR_END_TIME] = prev_end.astimezone(timezone.utc)
-
-                    # Next
-                    forecast.append(
-                        {
-                            ATTR_STAGE: Stage(int(next_stage.get("stage", "0"))),
-                            ATTR_START_TIME: datetime.fromisoformat(
-                                next_stage.get("stage_start_timestamp")
-                            ).astimezone(timezone.utc),
-                        }
-                    )
-
-                filtered = []
-                for f in forecast:
-                    if ATTR_END_TIME in f and f.get(ATTR_END_TIME) >= self.now:
-                        filtered.append(f)
-
-                area_forecast[idx] = {
-                    ATTR_NAME: area.get("name", ""),
-                    ATTR_FORECAST: filtered,
-                }
-
-        return area_forecast
-
-    async def async_update_schedule(self) -> dict:
-        """Retrieve schedule data."""
-        areas_schedule_data: dict = {}
-
-        for area in self.areas:
-            # Get foreacast for area
-            forecast = []
-            try:
-                data = await self.hass.async_add_executor_job(self.sepush.area, area.id)
-            except (SePushError) as err:
-                raise UpdateFailed(err) from err
-
-            for event in data.get("events", {}):
-                note = event.get("note")
-                parts = str(note).split(" ")
-                stage = Stage(int(parts[1]))
-                start = datetime.fromisoformat(event.get("start")).astimezone(
-                    timezone.utc
-                )
-                end = datetime.fromisoformat(event.get("end")).astimezone(timezone.utc)
-
-                forecast.append(
-                    {
-                        ATTR_STAGE: stage,
-                        ATTR_START_TIME: start,
-                        ATTR_END_TIME: end,
-                    }
-                )
-
-            # Get schedule for area
-            stage_schedule = {}
-            sast = timezone(timedelta(hours=+2), "SAST")
-            for day in data.get("schedule", {}).get("days", []):
-                date = datetime.strptime(day.get("date"), "%Y-%m-%d")
-                stages = day.get("stages", [])
-                for i, stage in enumerate(stages):
-                    schedule = []
-                    for slot in stages[i]:
-                        start_str, end_str = slot.strip().split("-")
-                        start = datetime.strptime(start_str, "%H:%M").replace(
-                            year=date.year,
-                            month=date.month,
-                            day=date.day,
-                            second=0,
-                            microsecond=0,
-                            tzinfo=sast,
-                        )
-                        end = datetime.strptime(end_str, "%H:%M").replace(
-                            year=date.year,
-                            month=date.month,
-                            day=date.day,
-                            second=0,
-                            microsecond=0,
-                            tzinfo=sast,
-                        )
-                        if end < start:
-                            end = end + timedelta(days=1)
-                        schedule.append((start, end))
-
-                    schedule = to_utc(schedule)
-                    stage_schedule[i + 1] = schedule
-
-            areas_schedule_data[area.id] = {
-                ATTR_FORECAST: forecast,
-                ATTR_SCHEDULE: stage_schedule,
-            }
-
-        return areas_schedule_data
-
-    async def async_update_quota(self) -> dict:
-        """Retrieve latest quota."""
-        try:
-            data = await self.hass.async_add_executor_job(self.sepush.check_allowance)
-        except (SePushError) as err:
-            raise UpdateFailed(err) from err
-
-        return data.get("allowance", {})
-
-
 @dataclass
 class LoadSheddingSensorDescription(SensorEntityDescription):
     """Class describing LoadShedding sensor entities."""
 
 
-class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
+class LoadSheddingStageSensorEntity(
+    LoadSheddingDevice, CoordinatorEntity, RestoreSensor
+):
     """Define a LoadShedding Stage entity."""
 
     def __init__(self, coordinator: CoordinatorEntity, idx: str) -> None:
@@ -324,32 +98,28 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         super().__init__(coordinator)
         self.idx = idx
 
-        description = LoadSheddingSensorDescription(
+        self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} stage",
             icon="mdi:lightning-bolt-outline",
             name=f"{DOMAIN} stage",
             entity_registry_enabled_default=True,
         )
-
-        self.entity_description = description
-        self._device_id = f"{NAME}"
         self._state: StateType = None
         self._attrs = {}
         self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
-        name = self.data.get("name", "")
-        self._attr_name = f"{NAME} {name} Stage"
-        self._attr_unique_id = f"stage_{name}"
+        self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_{self.idx}"
+        self.entity_id = f"{DOMAIN}.{DOMAIN}_stage_{idx}"
+
+    async def async_added_to_hass(self) -> None:
+        """Handle entity which will be added."""
+        if restored_data := await self.async_get_last_sensor_data():
+            self._attr_native_value = restored_data.native_value
+        await super().async_added_to_hass()
 
     @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information about this LoadShedding receiver."""
-        return {
-            ATTR_IDENTIFIERS: {(DOMAIN, self._device_id)},
-            ATTR_NAME: f"{NAME}",
-            ATTR_MANUFACTURER: MANUFACTURER,
-            ATTR_MODEL: API,
-            ATTR_VIA_DEVICE: (DOMAIN, self._device_id),
-        }
+    def name(self) -> str | None:
+        name = self.data.get("name", "Unknown")
+        return f"{name} Stage"
 
     @property
     def native_value(self) -> StateType:
@@ -395,11 +165,14 @@ class LoadSheddingStageSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
-        self.async_write_ha_state()
+        if data := self.coordinator.data.get(ATTR_STAGE):
+            self.data = data
+            self.async_write_ha_state()
 
 
-class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
+class LoadSheddingScheduleSensorEntity(
+    LoadSheddingDevice, CoordinatorEntity, RestoreSensor
+):
     """Define a LoadShedding Schedule entity."""
 
     coordinator: CoordinatorEntity
@@ -410,25 +183,34 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         self.data = self.coordinator.data.get(ATTR_SCHEDULE, [])
         self.area = area
 
-        description = LoadSheddingSensorDescription(
+        self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} schedule {area.id}",
             icon="mdi:calendar",
             name=f"{DOMAIN} schedule {area.name}",
             entity_registry_enabled_default=True,
         )
-
-        self.entity_description = description
-        self._device_id = f"{NAME}"
         self._state: StateType = None
         self._attrs = {}
-        self._attr_name = f"{NAME} {area.name}"
-        self._attr_unique_id = f"{area.id}"
+        self._attr_unique_id = (
+            f"{self.coordinator.config_entry.entry_id}_sensor_{area.id}"
+        )
+        self.entity_id = f"{DOMAIN}.{DOMAIN}_area_{area.id}"
+
+    async def async_added_to_hass(self) -> None:
+        """Handle entity which will be added."""
+        if restored_data := await self.async_get_last_sensor_data():
+            self._attr_native_value = restored_data.native_value
+        await super().async_added_to_hass()
+
+    @property
+    def name(self) -> str | None:
+        return self.area.name
 
     @property
     def native_value(self) -> StateType:
         """Return the schedule state."""
         if not self.data:
-            return self._state
+            return self._attr_native_value
 
         area = self.data.get(self.area.id)
 
@@ -438,26 +220,15 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
         if not forecast:
             return self._state
 
-        next = forecast[0]
-        if next.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
+        nxt = forecast[0]
+        if nxt.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
             return self._state
 
         now = datetime.now(timezone.utc)
-        if next.get(ATTR_START_TIME) <= now <= next.get(ATTR_END_TIME):
+        if nxt.get(ATTR_START_TIME) <= now <= nxt.get(ATTR_END_TIME):
             self._state = cast(StateType, STATE_ON)
 
         return self._state
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information about this LoadShedding receiver."""
-        return {
-            ATTR_IDENTIFIERS: {(DOMAIN, self._device_id)},
-            ATTR_NAME: f"{NAME}",
-            ATTR_MANUFACTURER: MANUFACTURER,
-            ATTR_MODEL: API,
-            ATTR_VIA_DEVICE: (DOMAIN, self._device_id),
-        }
 
     @property
     def extra_state_attributes(self) -> dict[str, list, Any]:
@@ -489,11 +260,14 @@ class LoadSheddingScheduleSensorEntity(CoordinatorEntity, RestoreEntity, SensorE
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.data = self.coordinator.data.get(ATTR_SCHEDULE, self.data)
-        self.async_write_ha_state()
+        if data := self.coordinator.data.get(ATTR_SCHEDULE):
+            self.data = data
+            self.async_write_ha_state()
 
 
-class LoadSheddingQuotaSensorEntity(CoordinatorEntity, RestoreEntity, SensorEntity):
+class LoadSheddingQuotaSensorEntity(
+    LoadSheddingDevice, CoordinatorEntity, RestoreSensor
+):
     """Define a LoadShedding Quota entity."""
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
@@ -501,19 +275,20 @@ class LoadSheddingQuotaSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
         super().__init__(coordinator)
         self.data = self.coordinator.data.get(ATTR_QUOTA, {})
 
-        description = LoadSheddingSensorDescription(
+        self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} SePush Quota",
-            icon="mdi:lightning-bolt-outline",
+            icon="mdi:api",
             name=f"{DOMAIN} SePush Quota",
             entity_registry_enabled_default=True,
         )
-
-        self.entity_description = description
-        self._device_id = f"{NAME}"
         self._state: StateType = None
         self._attrs = {}
         self._attr_name = f"{NAME} SePush Quota"
-        self._attr_unique_id = f"se_push_quota"
+        self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_se_push_quota"
+
+    @property
+    def name(self) -> str | None:
+        return "SePush API Quota"
 
     @property
     def native_value(self) -> StateType:
@@ -522,17 +297,6 @@ class LoadSheddingQuotaSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
             count = int(self.data.get("count", 0))
             self._state = cast(StateType, count)
         return self._state
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information about this LoadShedding receiver."""
-        return {
-            ATTR_IDENTIFIERS: {(DOMAIN, self._device_id)},
-            ATTR_NAME: f"{NAME}",
-            ATTR_MANUFACTURER: MANUFACTURER,
-            ATTR_MODEL: API,
-            ATTR_VIA_DEVICE: (DOMAIN, self._device_id),
-        }
 
     @property
     def extra_state_attributes(self) -> dict[str, list, Any]:
@@ -547,8 +311,9 @@ class LoadSheddingQuotaSensorEntity(CoordinatorEntity, RestoreEntity, SensorEnti
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self.data = self.coordinator.data.get(ATTR_QUOTA, {})
-        self.async_write_ha_state()
+        if data := self.coordinator.data.get(ATTR_QUOTA):
+            self.data = data
+            self.async_write_ha_state()
 
 
 def stage_forecast_to_data(stage_forecast: list) -> list:
@@ -577,39 +342,39 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
     data = dict(DEFAULT_DATA)
     data[ATTR_STAGE] = stage.value
 
-    current, next = {}, {}
+    cur, nxt = {}, {}
     if now < forecast[0].get(ATTR_START_TIME):
         # before
-        next = forecast[0]
+        nxt = forecast[0]
     elif forecast[0].get(ATTR_START_TIME) <= now <= forecast[0].get(ATTR_END_TIME, now):
         # during
-        current = forecast[0]
+        cur = forecast[0]
         if len(forecast) > 1:
-            next = forecast[1]
+            nxt = forecast[1]
     elif forecast[0].get(ATTR_END_TIME) < now:
         # after
         if len(forecast) > 1:
-            next = forecast[1]
+            nxt = forecast[1]
 
-    if current:
-        data[ATTR_STAGE] = current.get(ATTR_STAGE).value
-        data[ATTR_START_TIME] = current.get(ATTR_START_TIME).isoformat()
-        if ATTR_END_TIME in current:
-            data[ATTR_END_TIME] = current.get(ATTR_END_TIME).isoformat()
+    if cur:
+        data[ATTR_STAGE] = cur.get(ATTR_STAGE).value
+        data[ATTR_START_TIME] = cur.get(ATTR_START_TIME).isoformat()
+        if ATTR_END_TIME in cur:
+            data[ATTR_END_TIME] = cur.get(ATTR_END_TIME).isoformat()
 
-            end_time = current.get(ATTR_END_TIME)
+            end_time = cur.get(ATTR_END_TIME)
             ends_in = end_time - now
             ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
             ends_in = int(ends_in.total_seconds() / 60)  # minutes
             data[ATTR_END_IN] = ends_in
 
-    if next:
-        data[ATTR_NEXT_STAGE] = next.get(ATTR_STAGE).value
-        data[ATTR_NEXT_START_TIME] = next.get(ATTR_START_TIME).isoformat()
-        if ATTR_END_TIME in next:
-            data[ATTR_NEXT_END_TIME] = next.get(ATTR_END_TIME).isoformat()
+    if nxt:
+        data[ATTR_NEXT_STAGE] = nxt.get(ATTR_STAGE).value
+        data[ATTR_NEXT_START_TIME] = nxt.get(ATTR_START_TIME).isoformat()
+        if ATTR_END_TIME in nxt:
+            data[ATTR_NEXT_END_TIME] = nxt.get(ATTR_END_TIME).isoformat()
 
-        start_time = next.get(ATTR_START_TIME)
+        start_time = nxt.get(ATTR_START_TIME)
         starts_in = start_time - now
         starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
         starts_in = int(starts_in.total_seconds() / 60)  # minutes
@@ -620,7 +385,7 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
 
 def clean(data: dict) -> dict:
     """Remove default values from dict"""
-    for (key, value) in DEFAULT_DATA.items():
+    for (key, value) in CLEAN_DATA.items():
         if key not in data:
             continue
         if data[key] == value:
