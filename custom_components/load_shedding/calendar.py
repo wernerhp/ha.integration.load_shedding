@@ -28,7 +28,7 @@ from .const import (
 
 
 async def async_setup_entry(
-        hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
@@ -62,10 +62,10 @@ class LoadSheddingForecastCalendar(
         return self._event
 
     async def async_get_events(
-            self,
-            hass: HomeAssistant,
-            start_date: datetime,
-            end_date: datetime,
+        self,
+        hass: HomeAssistant,
+        start_date: datetime,
+        end_date: datetime,
     ) -> list[CalendarEvent]:
         """Return calendar events within a datetime range."""
         events = []
@@ -77,9 +77,9 @@ class LoadSheddingForecastCalendar(
                     event: CalendarEvent = CalendarEvent(
                         start=f.get(ATTR_START_TIME),
                         end=f.get(ATTR_END_TIME),
-                        summary=area.name,
+                        summary=str(f.get(ATTR_STAGE)),
                         location=area.name,
-                        description=f.get(ATTR_STAGE),
+                        description=f"{NAME}",
                     )
                     events.append(event)
 

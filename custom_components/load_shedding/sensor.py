@@ -62,7 +62,7 @@ CLEAN_DATA = {
 
 
 async def async_setup_entry(
-        hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
     # coordinator = hass.data[DOMAIN][entry.entry_id]
@@ -285,6 +285,7 @@ class LoadSheddingQuotaSensorEntity(
         self._attrs = {}
         self._attr_name = f"{NAME} SePush Quota"
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_se_push_quota"
+        self.entity_id = f"{DOMAIN}.{DOMAIN}_sepush_api_quota"
 
     @property
     def name(self) -> str | None:
