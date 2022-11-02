@@ -2,7 +2,7 @@
 
 A Home Assistant integration to track your load schedding schedule.
 
-![img_8.png](img_8.png)
+![img_10.png](img_10.png)
 
 > ℹ️ **_NOTE:_**  Prior to v1.0.0 this integration made use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
 > If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
@@ -75,7 +75,10 @@ i.e When load shedding is suspended, it will show **No Load Shedding**.  When St
   </details>
 
 # Cards
-I created this card with the help of [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row) and [🍄 Mushroom](https://github.com/piitaya/lovelace-mushroom)  
+I created these cards with the help the following
+- [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row) 
+- [🍄 Mushroom](https://github.com/piitaya/lovelace-mushroom)
+- [Atomic Calendar Revive](https://github.com/totaldebug/atomic-calendar-revive)
 <details>
   <summary>Card 1</summary>
 
@@ -97,6 +100,12 @@ I created this card with the help of [template-entity-row](https://github.com/th
 ![img_2.png](img_2.png)  
 </details>
 
+<details>
+  <summary>Card 4 - Mushroom Chips and Atomic Calendar Revive</summary>
+
+[Code](examples/card4.yaml)  
+![img_10.png](img_10.png)  
+</details>
 
 # Automation Ideas
 These are just some automations I've got set up.  They are not perfect and will require some tweaking on your end.    

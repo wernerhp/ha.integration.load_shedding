@@ -1,0 +1,45 @@
+type: vertical-stack
+cards:
+  - type: custom:mushroom-chips-card
+    chips:
+      - type: entity
+        entity: sensor.load_shedding_stage_eskom
+        icon: ''
+      - type: entity
+        entity: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
+      - type: template
+        content: '{{state_attr(entity, "count")}}/{{state_attr(entity, "limit")}}'
+        entity: sensor.sepush_api_quota
+        icon: mdi:api
+        tap_action:
+          action: more-info
+    alignment: center
+  - type: custom:atomic-calendar-revive
+    enableModeChange: true
+    firstDayOfWeek: 1
+    maxDaysToShow: 7
+    refreshInterval: 1800
+    entities:
+      - calendar.load_shedding_forecast
+    showCurrentEventLine: false
+    showMonth: true
+    showWeekDay: true
+    disableEventLink: true
+    showNoEventsForToday: false
+    disableLocationLink: true
+    showFullDayProgress: false
+    showEventIcon: false
+    showHiddenText: false
+    showCalendarName: false
+    calShowDescription: false
+    showLastCalendarWeek: false
+    disableCalEventLink: true
+    disableCalLocationLink: true
+    disableCalLink: true
+    showDescription: false
+    dateFormat: LL
+    showDate: false
+    sortByStartTime: false
+    showRelativeTime: true
+    showProgressBar: true
+    showLocation: true
