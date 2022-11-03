@@ -9,7 +9,7 @@ cards:
         entity: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
       - type: template
         content: '{{state_attr(entity, "count")}}/{{state_attr(entity, "limit")}}'
-        entity: sensor.sepush_api_quota
+        entity: sensor.load_shedding_sepush_quota
         icon: mdi:api
         tap_action:
           action: more-info
