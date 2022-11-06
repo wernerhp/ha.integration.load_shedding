@@ -9,7 +9,6 @@ from homeassistant.components.sensor import RestoreSensor, SensorEntityDescripti
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ATTRIBUTION,
-    STATE_OFF,
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -41,7 +40,7 @@ from .const import (
 )
 
 DEFAULT_DATA = {
-    ATTR_STAGE: 0,
+    ATTR_STAGE: Stage.NO_LOAD_SHEDDING.value,
     ATTR_START_TIME: 0,
     ATTR_END_TIME: 0,
     ATTR_END_IN: 0,
@@ -65,7 +64,6 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
-    # coordinator = hass.data[DOMAIN][entry.entry_id]
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
 
     entities: list[Entity] = []
@@ -104,8 +102,6 @@ class LoadSheddingStageSensorEntity(
             name=f"{DOMAIN} stage",
             entity_registry_enabled_default=True,
         )
-        self._state: StateType = None
-        self._attrs = {}
         self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_{self.idx}"
         self.entity_id = f"{DOMAIN}.{DOMAIN}_stage_{idx}"
@@ -124,27 +120,38 @@ class LoadSheddingStageSensorEntity(
     @property
     def native_value(self) -> StateType:
         """Return the stage state."""
-        self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
-        if self.data and self.data.get(ATTR_FORECAST, []):
-            stage = self.data.get(ATTR_FORECAST)[0].get(ATTR_STAGE, Stage.UNKNOWN)
-            if stage in [Stage.UNKNOWN]:
-                return self._state
-            self._state = cast(StateType, stage)
-        return self._state
+        if not self.data:
+            return self._attr_native_value
+
+        forecast = self.data.get(ATTR_FORECAST, [])
+        if not forecast:
+            return self._attr_native_value
+
+        stage = forecast[0].get(ATTR_STAGE, Stage.UNKNOWN)
+        if stage in [Stage.UNKNOWN]:
+            return self._attr_native_value
+
+        self._attr_native_value = cast(StateType, stage)
+        return self._attr_native_value
 
     @property
     def extra_state_attributes(self) -> dict[str, list, Any]:
         """Return the state attributes."""
+        if not hasattr(self, "_attr_extra_state_attributes"):
+            self._attr_extra_state_attributes = {}
+
         self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
         if not self.data:
-            return self._attrs
+            return self._attr_extra_state_attributes
 
         stage_forecast = self.data.get(ATTR_FORECAST, [])
         if not stage_forecast:
-            return self._attrs
+            return self._attr_extra_state_attributes
 
         now = datetime.now(timezone.utc)
-        data = get_sensor_attrs(stage_forecast, stage_forecast[0].get(ATTR_STAGE))
+        data = get_sensor_attrs(
+            stage_forecast, stage_forecast[0].get(ATTR_STAGE, Stage.UNKNOWN)
+        )
         data[ATTR_FORECAST] = []
         for f in stage_forecast:
             if ATTR_END_TIME in f and f.get(ATTR_END_TIME) < now:
@@ -158,9 +165,11 @@ class LoadSheddingStageSensorEntity(
 
             data[ATTR_FORECAST].append(forecast)
 
-        self._attrs.update(clean(data))
-        self._attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
-        return self._attrs
+        self._attr_extra_state_attributes.update(clean(data))
+        self._attr_extra_state_attributes[
+            ATTR_LAST_UPDATE
+        ] = self.coordinator.last_update
+        return self._attr_extra_state_attributes
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -189,8 +198,6 @@ class LoadSheddingScheduleSensorEntity(
             name=f"{DOMAIN} schedule {area.name}",
             entity_registry_enabled_default=True,
         )
-        self._state: StateType = None
-        self._attrs = {}
         self._attr_unique_id = (
             f"{self.coordinator.config_entry.entry_id}_sensor_{area.id}"
         )
@@ -212,32 +219,33 @@ class LoadSheddingScheduleSensorEntity(
         if not self.data:
             return self._attr_native_value
 
-        area = self.data.get(self.area.id)
-
-        forecast = area.get(ATTR_FORECAST)
-        self._state = cast(StateType, STATE_OFF)
+        area = self.data.get(self.area.id, {})
+        forecast = area.get(ATTR_FORECAST, [])
 
         if not forecast:
-            return self._state
+            return self._attr_native_value
 
         nxt = forecast[0]
         if nxt.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
-            return self._state
+            return self._attr_native_value
 
         now = datetime.now(timezone.utc)
         if nxt.get(ATTR_START_TIME) <= now <= nxt.get(ATTR_END_TIME):
-            self._state = cast(StateType, STATE_ON)
+            self._attr_native_value = cast(StateType, STATE_ON)
 
-        return self._state
+        return self._attr_native_value
 
     @property
     def extra_state_attributes(self) -> dict[str, list, Any]:
         """Return the state attributes."""
+        if not hasattr(self, "_attr_extra_state_attributes"):
+            self._attr_extra_state_attributes = {}
+
         if not self.data:
-            return self._attrs
+            return self._attr_extra_state_attributes
 
         now = datetime.now(timezone.utc)
-        data = self._attrs
+        data = self._attr_extra_state_attributes
         area_forecast = self.data.get(self.area.id, {}).get(ATTR_FORECAST)
         if area_forecast:
             data = get_sensor_attrs(area_forecast)
@@ -253,9 +261,11 @@ class LoadSheddingScheduleSensorEntity(
                     }
                 )
 
-        self._attrs.update(clean(data))
-        self._attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
-        return self._attrs
+        self._attr_extra_state_attributes.update(clean(data))
+        self._attr_extra_state_attributes[
+            ATTR_LAST_UPDATE
+        ] = self.coordinator.last_update
+        return self._attr_extra_state_attributes
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -281,8 +291,6 @@ class LoadSheddingQuotaSensorEntity(
             name=f"{DOMAIN} SePush Quota",
             entity_registry_enabled_default=True,
         )
-        self._state: StateType = None
-        self._attrs = {}
         self._attr_name = f"{NAME} SePush Quota"
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_se_push_quota"
         self.entity_id = f"{DOMAIN}.{DOMAIN}_sepush_api_quota"
@@ -294,20 +302,27 @@ class LoadSheddingQuotaSensorEntity(
     @property
     def native_value(self) -> StateType:
         """Return the stage state."""
-        if self.data:
-            count = int(self.data.get("count", 0))
-            self._state = cast(StateType, count)
-        return self._state
+        if not self.data:
+            return self._attr_native_value
+
+        count = int(self.data.get("count", 0))
+        self._attr_native_value = cast(StateType, count)
+        return self._attr_native_value
 
     @property
     def extra_state_attributes(self) -> dict[str, list, Any]:
         """Return the state attributes."""
-        if not self.data:
-            return self._attrs
+        if not hasattr(self, "_attr_extra_state_attributes"):
+            self._attr_extra_state_attributes = {}
 
-        self._attrs.update(self.data)
-        self._attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
-        return self._attrs
+        if not self.data:
+            return self._attr_extra_state_attributes
+
+        self._attr_extra_state_attributes.update(self.data)
+        self._attr_extra_state_attributes[
+            ATTR_LAST_UPDATE
+        ] = self.coordinator.last_update
+        return self._attr_extra_state_attributes
 
     @callback
     def _handle_coordinator_update(self) -> None:

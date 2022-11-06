@@ -14,6 +14,54 @@ cards:
         tap_action:
           action: more-info
     alignment: center
+  - type: markdown
+    content: >
+      {% set stage_sensor = "sensor.load_shedding_stage_eskom" %}
+
+      {% set area_sensor =
+      "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape"
+      %}   {% set area_schedule = state_attr(area_sensor, "forecast") %}
+
+      {% if area_schedule %}
+        {% set start_time = area_schedule[0].start_time %}
+        {% set end_time = area_schedule[0].end_time %}
+
+        {% if is_state(area_sensor, "off") %}
+          {% set starts_in = timedelta(minutes=state_attr(area_sensor, "starts_in")).total_seconds() | int // 60 %}
+          {% set mins = starts_in % 60 %}
+          {% set hrs = starts_in // 60 % 24 %}
+          {% set days = starts_in // 1440 %}
+          {% set alert = "Load Shedding starts in {d}d {h}h {m}m ({next})".format(d=days, m=mins, h=hrs, next=as_timestamp(start_time) | timestamp_custom("%H:%M", True)) %}
+
+          {% if is_state_attr(stage_sensor, "stage", 0) %}
+            <ha-alert alert-type="success">{{ states(stage_sensor) }}</ha-alert>
+          {% elif starts_in > 1440  %}
+            <ha-alert alert-type="success">{{ alert }}</ha-alert>
+          {% elif not is_state_attr(stage_sensor, "stage", 0) and 60 < starts_in <= 1440 %}
+            <ha-alert alert-type="warning">{{ alert }}</ha-alert>
+          {% else %}
+            <ha-alert alert-type="error">{{ alert }}</ha-alert>
+          {% endif %}
+        {% else %}
+          {% set ends_in = timedelta(minutes=state_attr(area_sensor, "ends_in")).total_seconds() | int // 60 %}
+            {% set mins = ends_in % 60 %}
+            {% set hrs = ends_in // 60 % 24 %}
+            {% set days = ends_in // 1440 %}
+            {% set alert = "Load Shedding ends in {d}d {h}h {m}m ({next})".format(d=days, m=mins, h=hrs, next=as_timestamp(end_time) | timestamp_custom("%H:%M", True)) %}
+
+            <ha-alert alert-type="error">{{ alert }}</ha-alert>
+        {% endif %}
+      {% else %}
+        {% set stage = state_attr(stage_sensor, "next_stage") %}
+        {% set start_time = state_attr(stage_sensor, "start_time") %}
+        {% set end_time = state_attr(stage_sensor, "end_time") %}
+        {% set starts_in = timedelta(minutes=state_attr(stage_sensor, "starts_in")).total_seconds() | int // 60 %}
+        {% set mins = starts_in % 60 %}
+        {% set hrs = starts_in // 60 % 24 %}
+        {% set days = starts_in // 1440 %}
+        {% set alert = "Stage {stage} starts in {d}d {h}h {m}m ({next})".format(stage=stage, d=days, m=mins, h=hrs, next=as_timestamp(start_time) | timestamp_custom("%H:%M", True)) %}
+        <ha-alert alert-type="success">{{ alert }}</ha-alert>
+      {% endif %}
   - type: custom:atomic-calendar-revive
     enableModeChange: true
     firstDayOfWeek: 1

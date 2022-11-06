@@ -62,9 +62,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     sepush: SePush = SePush(token=api_key)
     if not hass.data.get(DOMAIN):
         hass.data.setdefault(DOMAIN, {})
-    # hass.data[DOMAIN] = {entry.entry_id: sepush}
-
-    # sepush = hass.data.get(DOMAIN, {}).get(entry.entry_id)
 
     coordinator = LoadSheddingCoordinator(hass, sepush)
     coordinator.update_interval = timedelta(
