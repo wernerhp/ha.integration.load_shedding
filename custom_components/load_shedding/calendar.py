@@ -8,7 +8,7 @@ from homeassistant.components.calendar import (
     CalendarEvent,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -87,3 +87,10 @@ class LoadSheddingForecastCalendar(
             self._event = events[0]
 
         return events
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if data := self.coordinator.data.get(ATTR_STAGE):
+            self.data = data
+            self.async_write_ha_state()
