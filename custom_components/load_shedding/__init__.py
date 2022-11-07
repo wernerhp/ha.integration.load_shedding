@@ -334,21 +334,42 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 planned_end_time = planned.get(ATTR_END_TIME)
 
                 if planned_stage in [Stage.NO_LOAD_SHEDDING]:
-                    # forecast.append(planned)
                     continue
 
                 schedule = stage_schedules.get(planned_stage, [])
 
                 for timeslot in schedule:
+                    area_start, area_end = timeslot.get(ATTR_START_TIME), timeslot.get(
+                        ATTR_END_TIME
+                    )
+
+                    if area_start >= planned_end_time:
+                        continue
+                    if area_end <= planned_start_time:
+                        continue
+
+                    # Clip schedules that overlap planned start time and end time
                     if (
-                        planned_start_time
-                        <= timeslot.get(ATTR_START_TIME)
-                        <= planned_end_time
-                        or planned_start_time
-                        <= timeslot.get(ATTR_END_TIME)
-                        <= planned_end_time
+                        area_start <= planned_start_time
+                        and area_end <= planned_end_time
                     ):
-                        forecast.append(timeslot)
+                        area_start = planned_start_time
+                    if (
+                        area_start >= planned_start_time
+                        and area_end >= planned_end_time
+                    ):
+                        area_end = planned_end_time
+
+                    if area_start == area_end:
+                        continue
+
+                    forecast.append(
+                        {
+                            ATTR_STAGE: planned_stage,
+                            ATTR_START_TIME: area_start,
+                            ATTR_END_TIME: area_end,
+                        }
+                    )
 
             data[ATTR_FORECAST] = forecast
 
