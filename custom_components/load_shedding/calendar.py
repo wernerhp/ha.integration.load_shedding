@@ -91,6 +91,6 @@ class LoadSheddingForecastCalendar(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data.get(ATTR_STAGE):
+        if data := self.coordinator.data.get(ATTR_SCHEDULE):
             self.data = data
             self.async_write_ha_state()
