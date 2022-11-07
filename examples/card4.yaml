@@ -59,7 +59,11 @@ cards:
         {% set mins = starts_in % 60 %}
         {% set hrs = starts_in // 60 % 24 %}
         {% set days = starts_in // 1440 %}
+        {% if (start_time == 0 or end_time == 0) %}
+        {% set alert = "No Load Shedding" %}
+        {% else %}
         {% set alert = "Stage {stage} starts in {d}d {h}h {m}m ({next})".format(stage=stage, d=days, m=mins, h=hrs, next=as_timestamp(start_time) | timestamp_custom("%H:%M", True)) %}
+        {% endif %}
         <ha-alert alert-type="success">{{ alert }}</ha-alert>
       {% endif %}
   - type: custom:atomic-calendar-revive

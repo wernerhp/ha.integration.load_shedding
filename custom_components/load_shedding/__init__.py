@@ -32,11 +32,15 @@ from load_shedding.providers import Area, Stage, to_utc
 from .const import (
     API,
     API_UPDATE_INTERVAL,
+    ATTR_AREA,
     ATTR_END_TIME,
+    ATTR_EVENTS,
     ATTR_FORECAST,
+    ATTR_PLANNED,
     ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
+    ATTR_STAGE_DATA,
     ATTR_START_TIME,
     CONF_AREAS,
     DEFAULT_SCAN_INTERVAL,
@@ -149,10 +153,15 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data = await self.async_update_schedule()
         except UpdateFailed as err:
             _LOGGER.error("Unable to get schedule: %s", err, exc_info=True)
-            self.data[ATTR_SCHEDULE] = []
+            self.data[ATTR_AREA] = []
         else:
-            self.data[ATTR_SCHEDULE] = data
+            self.data[ATTR_AREA] = data
             self.last_update = now
+
+        try:
+            await self.async_area_forecast()
+        except UpdateFailed as err:
+            _LOGGER.error("Unable to get schedule: %s", err, exc_info=True)
 
         try:
             data = await self.async_update_quota()
@@ -169,14 +178,14 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retrieve latest stage."""
         now = datetime.now(timezone.utc).replace(microsecond=0)
         try:
-            data = await self.hass.async_add_executor_job(self.sepush.status)
+            esp = await self.hass.async_add_executor_job(self.sepush.status)
         except SePushError as err:
             raise UpdateFailed(err) from err
         else:
-            area_forecast = {}
-            statuses = data.get("status", {})
+            data = {}
+            statuses = esp.get("status", {})
             for idx, area in statuses.items():
-                forecast = [
+                planned = [
                     {
                         ATTR_STAGE: Stage(int(area.get("stage", "0"))),
                         ATTR_START_TIME: datetime.fromisoformat(
@@ -191,10 +200,10 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     prev_end = datetime.fromisoformat(
                         next_stage.get("stage_start_timestamp")
                     )
-                    forecast[i][ATTR_END_TIME] = prev_end.astimezone(timezone.utc)
+                    planned[i][ATTR_END_TIME] = prev_end.astimezone(timezone.utc)
 
                     # Next
-                    forecast.append(
+                    planned.append(
                         {
                             ATTR_STAGE: Stage(int(next_stage.get("stage", "0"))),
                             ATTR_START_TIME: datetime.fromisoformat(
@@ -204,24 +213,28 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
                 filtered = []
-                for f in forecast:
-                    if ATTR_END_TIME in f and f.get(ATTR_END_TIME) >= now:
-                        filtered.append(f)
+                for stage in planned:
+                    if ATTR_END_TIME not in stage:
+                        stage[ATTR_END_TIME] = stage[ATTR_START_TIME] + timedelta(
+                            days=7
+                        )
+                    if ATTR_END_TIME in stage and stage.get(ATTR_END_TIME) >= now:
+                        filtered.append(stage)
 
-                area_forecast[idx] = {
+                data[idx] = {
                     ATTR_NAME: area.get("name", ""),
-                    ATTR_FORECAST: filtered,
+                    ATTR_PLANNED: filtered,
                 }
 
-        return area_forecast
+        return data
 
     async def async_update_schedule(self) -> dict:
         """Retrieve schedule data."""
-        areas_schedule_data: dict = {}
+        areas_stage_schedules: dict = {}
 
         for area in self.areas:
             # Get forecast for area
-            forecast = []
+            events = []
             try:
                 data = await self.hass.async_add_executor_job(self.sepush.area, area.id)
             except SePushError as err:
@@ -236,7 +249,7 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 end = datetime.fromisoformat(event.get("end")).astimezone(timezone.utc)
 
-                forecast.append(
+                events.append(
                     {
                         ATTR_STAGE: stage,
                         ATTR_START_TIME: start,
@@ -249,40 +262,95 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             sast = timezone(timedelta(hours=+2), "SAST")
             for day in data.get("schedule", {}).get("days", []):
                 date = datetime.strptime(day.get("date"), "%Y-%m-%d")
-                stages = day.get("stages", [])
-                for i, stage in enumerate(stages):
-                    schedule = []
-                    for slot in stages[i]:
-                        start_str, end_str = slot.strip().split("-")
-                        start = datetime.strptime(start_str, "%H:%M").replace(
-                            year=date.year,
-                            month=date.month,
-                            day=date.day,
-                            second=0,
-                            microsecond=0,
-                            tzinfo=sast,
+                stage_timeslots = day.get("stages", [])
+                for i, timeslots in enumerate(stage_timeslots):
+                    stage = Stage(i + 1)
+                    if stage not in stage_schedule:
+                        stage_schedule[stage] = []
+                    for timeslot in timeslots:
+                        start_str, end_str = timeslot.strip().split("-")
+                        start = (
+                            datetime.strptime(start_str, "%H:%M")
+                            .replace(
+                                year=date.year,
+                                month=date.month,
+                                day=date.day,
+                                second=0,
+                                microsecond=0,
+                                tzinfo=sast,
+                            )
+                            .astimezone(timezone.utc)
                         )
-                        end = datetime.strptime(end_str, "%H:%M").replace(
-                            year=date.year,
-                            month=date.month,
-                            day=date.day,
-                            second=0,
-                            microsecond=0,
-                            tzinfo=sast,
+                        end = (
+                            datetime.strptime(end_str, "%H:%M")
+                            .replace(
+                                year=date.year,
+                                month=date.month,
+                                day=date.day,
+                                second=0,
+                                microsecond=0,
+                                tzinfo=sast,
+                            )
+                            .astimezone(timezone.utc)
                         )
                         if end < start:
                             end = end + timedelta(days=1)
-                        schedule.append((start, end))
+                        stage_schedule[stage].append(
+                            {
+                                ATTR_STAGE: stage,
+                                ATTR_START_TIME: start,
+                                ATTR_END_TIME: end,
+                            }
+                        )
 
-                    schedule = to_utc(schedule)
-                    stage_schedule[i + 1] = schedule
-
-            areas_schedule_data[area.id] = {
-                ATTR_FORECAST: forecast,
+            areas_stage_schedules[area.id] = {
+                ATTR_EVENTS: events,
                 ATTR_SCHEDULE: stage_schedule,
             }
 
-        return areas_schedule_data
+        return areas_stage_schedules
+
+    async def async_area_forecast(self) -> None:
+        """Derive area forecast from planned stages and area schedule."""
+
+        CAPE_TOWN = "capetown"
+        ESKOM = "eskom"
+
+        stages = self.data.get(ATTR_STAGE, {})
+        eskom_stages = stages.get(ESKOM, {}).get(ATTR_PLANNED, [])
+        cape_town_stages = stages.get(CAPE_TOWN, {}).get(ATTR_PLANNED, [])
+
+        areas = self.data.get(ATTR_AREA, {})
+        for area_id, data in areas.items():
+            stage_schedules = data.get(ATTR_SCHEDULE)
+
+            planned_stages = (
+                cape_town_stages if area_id.startswith(CAPE_TOWN) else eskom_stages
+            )
+            forecast = []
+            for planned in planned_stages:
+                planned_stage = planned.get(ATTR_STAGE)
+                planned_start_time = planned.get(ATTR_START_TIME)
+                planned_end_time = planned.get(ATTR_END_TIME)
+
+                if planned_stage in [Stage.NO_LOAD_SHEDDING]:
+                    # forecast.append(planned)
+                    continue
+
+                schedule = stage_schedules.get(planned_stage, [])
+
+                for timeslot in schedule:
+                    if (
+                        planned_start_time
+                        <= timeslot.get(ATTR_START_TIME)
+                        <= planned_end_time
+                        or planned_start_time
+                        <= timeslot.get(ATTR_END_TIME)
+                        <= planned_end_time
+                    ):
+                        forecast.append(timeslot)
+
+            data[ATTR_FORECAST] = forecast
 
     async def async_update_quota(self) -> dict:
         """Retrieve latest quota."""

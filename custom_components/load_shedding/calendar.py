@@ -17,8 +17,11 @@ from homeassistant.helpers.update_coordinator import (
 
 from . import LoadSheddingDevice
 from .const import (
+    ATTR_AREA,
     ATTR_END_TIME,
+    ATTR_EVENTS,
     ATTR_FORECAST,
+    ATTR_PLANNED,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_TIME,
@@ -44,7 +47,7 @@ class LoadSheddingForecastCalendar(
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
         super().__init__(coordinator)
-        self.data = self.coordinator.data.get(ATTR_SCHEDULE, {})
+        self.data = self.coordinator.data.get(ATTR_AREA, {})
 
         self._attr_unique_id = (
             f"{self.coordinator.config_entry.entry_id}_calendar_forecast"
@@ -71,13 +74,13 @@ class LoadSheddingForecastCalendar(
         events = []
 
         for area in self.coordinator.areas:
-            area_forecast = self.data.get(area.id, {}).get(ATTR_FORECAST)
-            if area_forecast:
-                for f in area_forecast:
+            area_events = self.data.get(area.id, {}).get(ATTR_FORECAST)
+            if area_events:
+                for area_event in area_events:
                     event: CalendarEvent = CalendarEvent(
-                        start=f.get(ATTR_START_TIME),
-                        end=f.get(ATTR_END_TIME),
-                        summary=str(f.get(ATTR_STAGE)),
+                        start=area_event.get(ATTR_START_TIME),
+                        end=area_event.get(ATTR_END_TIME),
+                        summary=str(area_event.get(ATTR_STAGE)),
                         location=area.name,
                         description=f"{NAME}",
                     )
@@ -91,6 +94,6 @@ class LoadSheddingForecastCalendar(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data.get(ATTR_SCHEDULE):
+        if data := self.coordinator.data.get(ATTR_AREA):
             self.data = data
             self.async_write_ha_state()
