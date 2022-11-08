@@ -18,9 +18,7 @@ cards:
     content: >
       {% set stage_sensor = "sensor.load_shedding_stage_eskom" %}
 
-      {% set area_sensor =
-      "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape"
-      %}
+      {% set area_sensor = "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape" %}
 
       {% set area_schedule = state_attr(area_sensor, "forecast") %}
 
@@ -76,7 +74,7 @@ cards:
     showMonth: true
     showWeekDay: true
     disableEventLink: true
-    showNoEventsForToday: true
+    showNoEventsForToday: false
     disableLocationLink: true
     showFullDayProgress: false
     showEventIcon: false

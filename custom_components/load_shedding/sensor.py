@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_ATTRIBUTION,
     STATE_ON,
+    STATE_OFF,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import Entity
@@ -25,7 +26,6 @@ from .const import (
     ATTR_AREA,
     ATTR_END_IN,
     ATTR_END_TIME,
-    ATTR_EVENTS,
     ATTR_FORECAST,
     ATTR_LAST_UPDATE,
     ATTR_NEXT_END_TIME,
@@ -69,18 +69,21 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
-    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    stage_coordinator = coordinators.get(ATTR_STAGE)
+    area_coordinator = coordinators.get(ATTR_AREA)
+    quota_coordinator = coordinators.get(ATTR_QUOTA)
 
     entities: list[Entity] = []
-    for idx in coordinator.data.get(ATTR_STAGE):
-        stage_entity = LoadSheddingStageSensorEntity(coordinator, idx)
+    for idx in stage_coordinator.data:
+        stage_entity = LoadSheddingStageSensorEntity(stage_coordinator, idx)
         entities.append(stage_entity)
 
-    for area in coordinator.areas:
-        area_entity = LoadSheddingScheduleSensorEntity(coordinator, area)
+    for area in area_coordinator.areas:
+        area_entity = LoadSheddingAreaSensorEntity(area_coordinator, area)
         entities.append(area_entity)
 
-    quota_entity = LoadSheddingQuotaSensorEntity(coordinator)
+    quota_entity = LoadSheddingQuotaSensorEntity(quota_coordinator)
     entities.append(quota_entity)
 
     async_add_entities(entities)
@@ -107,7 +110,7 @@ class LoadSheddingStageSensorEntity(
             name=f"{DOMAIN} stage",
             entity_registry_enabled_default=True,
         )
-        self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
+        self.data = self.coordinator.data.get(self.idx)
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_{self.idx}"
         self.entity_id = f"{DOMAIN}.{DOMAIN}_stage_{idx}"
 
@@ -145,7 +148,7 @@ class LoadSheddingStageSensorEntity(
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
 
-        self.data = self.coordinator.data.get(ATTR_STAGE, {}).get(self.idx)
+        self.data = self.coordinator.data.get(self.idx)
         if not self.data:
             return self._attr_extra_state_attributes
 
@@ -177,22 +180,22 @@ class LoadSheddingStageSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data.get(ATTR_STAGE):
+        if data := self.coordinator.data:
             self.data = data
             self.async_write_ha_state()
 
 
-class LoadSheddingScheduleSensorEntity(
+class LoadSheddingAreaSensorEntity(
     LoadSheddingDevice, CoordinatorEntity, RestoreSensor
 ):
-    """Define a LoadShedding Schedule entity."""
+    """Define a LoadShedding Area sensor entity."""
 
     coordinator: CoordinatorEntity
 
     def __init__(self, coordinator: CoordinatorEntity, area: Area) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self.data = self.coordinator.data.get(ATTR_AREA, [])
+        self.data = self.coordinator.data.get(area.id)
         self.area = area
 
         self.entity_description = LoadSheddingSensorDescription(
@@ -218,7 +221,7 @@ class LoadSheddingScheduleSensorEntity(
 
     @property
     def native_value(self) -> StateType:
-        """Return the schedule state."""
+        """Return the area state."""
         if not self.data:
             return self._attr_native_value
 
@@ -228,12 +231,12 @@ class LoadSheddingScheduleSensorEntity(
         if not events:
             return self._attr_native_value
 
-        nxt = events[0]
-        if nxt.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
-            return self._attr_native_value
-
         now = datetime.now(timezone.utc)
-        if nxt.get(ATTR_START_TIME) <= now <= nxt.get(ATTR_END_TIME):
+        event = events[0]
+        self._attr_native_value = cast(StateType, STATE_OFF)
+        if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
+            return self._attr_native_value
+        if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
             self._attr_native_value = cast(StateType, STATE_ON)
 
         return self._attr_native_value
@@ -273,7 +276,7 @@ class LoadSheddingScheduleSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data.get(ATTR_AREA):
+        if data := self.coordinator.data:
             self.data = data
             self.async_write_ha_state()
 
@@ -286,7 +289,7 @@ class LoadSheddingQuotaSensorEntity(
     def __init__(self, coordinator: CoordinatorEntity) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self.data = self.coordinator.data.get(ATTR_QUOTA, {})
+        self.data = self.coordinator.data
 
         self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} SePush Quota",
@@ -330,7 +333,7 @@ class LoadSheddingQuotaSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data.get(ATTR_QUOTA):
+        if data := self.coordinator.data:
             self.data = data
             self.async_write_ha_state()
 

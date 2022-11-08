@@ -28,10 +28,12 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from load_shedding.libs.sepush import SePush, SePushError
-from load_shedding.providers import Area, Stage, to_utc
+from load_shedding.providers import Area, Stage
 from .const import (
     API,
-    API_UPDATE_INTERVAL,
+    AREA_UPDATE_INTERVAL,
+    STAGE_UPDATE_INTERVAL,
+    QUOTA_UPDATE_INTERVAL,
     ATTR_AREA,
     ATTR_END_TIME,
     ATTR_EVENTS,
@@ -40,7 +42,6 @@ from .const import (
     ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
-    ATTR_STAGE_DATA,
     ATTR_START_TIME,
     CONF_AREAS,
     DEFAULT_SCAN_INTERVAL,
@@ -67,8 +68,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.data.get(DOMAIN):
         hass.data.setdefault(DOMAIN, {})
 
-    coordinator = LoadSheddingCoordinator(hass, sepush)
-    coordinator.update_interval = timedelta(
+    stage_coordinator = LoadSheddingStageCoordinator(hass, sepush)
+    stage_coordinator.update_interval = timedelta(
+        seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    )
+    await stage_coordinator.async_config_entry_first_refresh()
+
+    area_coordinator = LoadSheddingAreaCoordinator(
+        hass, sepush, stage_coordinator=stage_coordinator
+    )
+    area_coordinator.update_interval = timedelta(
         seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
     for conf in entry.options.get(CONF_AREAS, []).values():
@@ -76,11 +85,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             id=conf.get(CONF_ID),
             name=conf.get(CONF_NAME),
         )
-        coordinator.add_area(area)
+        area_coordinator.add_area(area)
+    await area_coordinator.async_config_entry_first_refresh()
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    quota_coordinator = LoadSheddingQuotaCoordinator(hass, sepush)
+    quota_coordinator.update_interval = timedelta(seconds=QUOTA_UPDATE_INTERVAL)
+    await quota_coordinator.async_config_entry_first_refresh()
 
-    await coordinator.async_config_entry_first_refresh()
+    hass.data[DOMAIN][entry.entry_id] = {
+        ATTR_STAGE: stage_coordinator,
+        ATTR_AREA: area_coordinator,
+        ATTR_QUOTA: quota_coordinator,
+    }
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -114,20 +130,15 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     return True
 
 
-class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Class to manage fetching LoadShedding stage from Provider."""
+class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Class to manage fetching LoadShedding Stage."""
 
     def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
         """Initialize."""
         super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
         self.data = {}
         self.sepush = sepush
-        self.areas: list[Area] = []
         self.last_update: datetime | None = None
-
-    def add_area(self, area: Area = None) -> None:
-        """Add a area to update."""
-        self.areas.append(area)
 
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
@@ -137,39 +148,16 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.last_update is not None:
             diff = (now - self.last_update).seconds
 
-        if 0 < diff < API_UPDATE_INTERVAL:
+        if 0 < diff < STAGE_UPDATE_INTERVAL:
             return self.data
 
         try:
-            data = await self.async_update_stage()
+            stage = await self.async_update_stage()
         except UpdateFailed as err:
             _LOGGER.error("Unable to get stage: %s", err, exc_info=True)
-            self.data[ATTR_STAGE] = {}
+            self.data = {}
         else:
-            self.data[ATTR_STAGE] = data
-            self.last_update = now
-
-        try:
-            data = await self.async_update_schedule()
-        except UpdateFailed as err:
-            _LOGGER.error("Unable to get schedule: %s", err, exc_info=True)
-            self.data[ATTR_AREA] = []
-        else:
-            self.data[ATTR_AREA] = data
-            self.last_update = now
-
-        try:
-            await self.async_area_forecast()
-        except UpdateFailed as err:
-            _LOGGER.error("Unable to get schedule: %s", err, exc_info=True)
-
-        try:
-            data = await self.async_update_quota()
-        except UpdateFailed as err:
-            _LOGGER.error("Unable to get quota: %s", err, exc_info=True)
-            self.data[ATTR_QUOTA] = {}
-        else:
-            self.data[ATTR_QUOTA] = data
+            self.data = stage
             self.last_update = now
 
         return self.data
@@ -228,7 +216,53 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return data
 
-    async def async_update_schedule(self) -> dict:
+
+class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Class to manage fetching LoadShedding Area."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        sepush: SePush,
+        stage_coordinator: DataUpdateCoordinator,
+    ) -> None:
+        """Initialize."""
+        super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
+        self.data = {}
+        self.sepush = sepush
+        self.last_update: datetime | None = None
+        self.areas: list[Area] = []
+        self.stage_coordinator = stage_coordinator
+
+    def add_area(self, area: Area = None) -> None:
+        """Add a area to update."""
+        self.areas.append(area)
+
+    async def _async_update_data(self) -> dict:
+        """Retrieve latest load shedding data."""
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        diff = 0
+        if self.last_update is not None:
+            diff = (now - self.last_update).seconds
+
+        if 0 < diff < AREA_UPDATE_INTERVAL:
+            await self.async_area_forecast()
+            return self.data
+
+        try:
+            area = await self.async_update_area()
+        except UpdateFailed as err:
+            _LOGGER.error("Unable to get area schedule: %s", err, exc_info=True)
+            self.data = {}
+        else:
+            self.data = area
+            self.last_update = now
+
+        await self.async_area_forecast()
+        return self.data
+
+    async def async_update_area(self) -> dict:
         """Retrieve schedule data."""
         areas_stage_schedules: dict = {}
 
@@ -236,11 +270,11 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Get forecast for area
             events = []
             try:
-                data = await self.hass.async_add_executor_job(self.sepush.area, area.id)
+                esp = await self.hass.async_add_executor_job(self.sepush.area, area.id)
             except SePushError as err:
                 raise UpdateFailed(err) from err
 
-            for event in data.get("events", {}):
+            for event in esp.get("events", {}):
                 note = event.get("note")
                 parts = str(note).split(" ")
                 stage = Stage(int(parts[1]))
@@ -260,7 +294,7 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Get schedule for area
             stage_schedule = {}
             sast = timezone(timedelta(hours=+2), "SAST")
-            for day in data.get("schedule", {}).get("days", []):
+            for day in esp.get("schedule", {}).get("days", []):
                 date = datetime.strptime(day.get("date"), "%Y-%m-%d")
                 stage_timeslots = day.get("stages", [])
                 for i, timeslots in enumerate(stage_timeslots):
@@ -313,19 +347,20 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_area_forecast(self) -> None:
         """Derive area forecast from planned stages and area schedule."""
 
-        CAPE_TOWN = "capetown"
-        ESKOM = "eskom"
+        cape_town = "capetown"
+        eskom = "eskom"
 
-        stages = self.data.get(ATTR_STAGE, {})
-        eskom_stages = stages.get(ESKOM, {}).get(ATTR_PLANNED, [])
-        cape_town_stages = stages.get(CAPE_TOWN, {}).get(ATTR_PLANNED, [])
+        stages = self.stage_coordinator.data
+        eskom_stages = stages.get(eskom, {}).get(ATTR_PLANNED, [])
+        cape_town_stages = stages.get(cape_town, {}).get(ATTR_PLANNED, [])
 
-        areas = self.data.get(ATTR_AREA, {})
-        for area_id, data in areas.items():
+        now = datetime.now(timezone.utc)
+
+        for area_id, data in self.data.items():
             stage_schedules = data.get(ATTR_SCHEDULE)
 
             planned_stages = (
-                cape_town_stages if area_id.startswith(CAPE_TOWN) else eskom_stages
+                cape_town_stages if area_id.startswith(cape_town) else eskom_stages
             )
             forecast = []
             for planned in planned_stages:
@@ -341,6 +376,9 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 for timeslot in schedule:
                     start_time = timeslot.get(ATTR_START_TIME)
                     end_time = timeslot.get(ATTR_END_TIME)
+
+                    if end_time < now:
+                        continue
 
                     if start_time >= planned_end_time:
                         continue
@@ -372,14 +410,39 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             data[ATTR_FORECAST] = forecast
 
+
+class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Class to manage fetching LoadShedding Quota."""
+
+    def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
+        """Initialize."""
+        super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
+        self.data = {}
+        self.sepush = sepush
+        self.last_update: datetime | None = None
+
+    async def _async_update_data(self) -> dict:
+        """Retrieve latest load shedding data."""
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        try:
+            quota = await self.async_update_quota()
+        except UpdateFailed as err:
+            _LOGGER.error("Unable to get quota: %s", err, exc_info=True)
+        else:
+            self.data = quota
+            self.last_update = now
+
+        return self.data
+
     async def async_update_quota(self) -> dict:
         """Retrieve latest quota."""
         try:
-            data = await self.hass.async_add_executor_job(self.sepush.check_allowance)
+            esp = await self.hass.async_add_executor_job(self.sepush.check_allowance)
         except SePushError as err:
             raise UpdateFailed(err) from err
 
-        return data.get("allowance", {})
+        return esp.get("allowance", {})
 
 
 class LoadSheddingDevice(Entity):

@@ -7,16 +7,14 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, OptionsFlow
-from homeassistant.const import (CONF_API_KEY, CONF_DESCRIPTION, CONF_ID,
-                                 CONF_NAME)
+from homeassistant.const import CONF_API_KEY, CONF_DESCRIPTION, CONF_ID, CONF_NAME
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
 from load_shedding import Provider, Province, get_areas
 from load_shedding.libs.sepush import SePush, SePushError
 from load_shedding.providers import ProviderError, Stage
-from .const import (CONF_AREA_ID, CONF_AREAS, CONF_PROVIDER,
-                    CONF_SEARCH, DOMAIN, NAME)
+from .const import CONF_AREA_ID, CONF_AREAS, CONF_PROVIDER, CONF_SEARCH, DOMAIN, NAME
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +43,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return False
 
     async def async_step_user(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
 
@@ -57,7 +55,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_sepush(None)
 
     async def async_step_provider(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to search for and select an area."""
         errors = {}
@@ -99,7 +97,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_lookup_areas(user_input)
 
     async def async_step_sepush(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to configure SePush."""
         self.provider = Provider.SE_PUSH
@@ -143,7 +141,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_lookup_areas(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to search for and select an area."""
         errors = {}
@@ -231,7 +229,7 @@ class LoadSheddingFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_select_area(user_input)
 
     async def async_step_select_area(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to create a area."""
         area_id = user_input.get(CONF_AREA_ID)
@@ -290,7 +288,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlow):
         self.areas = {}
 
     async def async_step_init(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:  # pylint: disable=unused-argument
         """Manage the options."""
 
@@ -317,7 +315,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlow):
         return await self.async_step_lookup_areas()
 
     async def async_step_lookup_areas(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to search for and select an area."""
         errors = {}
@@ -405,7 +403,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlow):
         return await self.async_step_select_area(user_input)
 
     async def async_step_select_area(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to create a area."""
         areas = self.options.get(CONF_AREAS, {})

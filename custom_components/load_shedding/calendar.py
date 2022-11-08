@@ -19,10 +19,7 @@ from . import LoadSheddingDevice
 from .const import (
     ATTR_AREA,
     ATTR_END_TIME,
-    ATTR_EVENTS,
     ATTR_FORECAST,
-    ATTR_PLANNED,
-    ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_TIME,
     DOMAIN,
@@ -34,9 +31,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Add LoadShedding entities from a config_entry."""
-    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    area_coordinator = coordinators.get(ATTR_AREA)
 
-    entities: list[Entity] = [LoadSheddingForecastCalendar(coordinator)]
+    entities: list[Entity] = [LoadSheddingForecastCalendar(area_coordinator)]
     async_add_entities(entities)
 
 
@@ -47,7 +45,7 @@ class LoadSheddingForecastCalendar(
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
         super().__init__(coordinator)
-        self.data = self.coordinator.data.get(ATTR_AREA, {})
+        self.data = self.coordinator.data
 
         self._attr_unique_id = (
             f"{self.coordinator.config_entry.entry_id}_calendar_forecast"
@@ -103,6 +101,6 @@ class LoadSheddingForecastCalendar(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data.get(ATTR_AREA):
+        if data := self.coordinator.data:
             self.data = data
             self.async_write_ha_state()

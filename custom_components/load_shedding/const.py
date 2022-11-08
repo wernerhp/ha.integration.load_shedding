@@ -11,7 +11,9 @@ NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
 VERSION: Final = "1.1.0"
 DEFAULT_SCAN_INTERVAL: Final = 60
-API_UPDATE_INTERVAL: Final = 5400  # 60sec * 90min
+AREA_UPDATE_INTERVAL: Final = 86400  # 60sec * 60min * 24h / daily
+QUOTA_UPDATE_INTERVAL: Final = 300  # 60sec * 5min
+STAGE_UPDATE_INTERVAL: Final = 3600  # 60sec * 60min / hourly
 
 CONF_DEFAULT_SCHEDULE_STAGE: Final = "default_schedule_stage"
 CONF_MUNICIPALITY: Final = "municipality"
