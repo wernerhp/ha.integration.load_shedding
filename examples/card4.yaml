@@ -20,7 +20,9 @@ cards:
 
       {% set area_sensor =
       "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape"
-      %}   {% set area_schedule = state_attr(area_sensor, "forecast") %}
+      %}
+
+      {% set area_schedule = state_attr(area_sensor, "forecast") %}
 
       {% if area_schedule %}
         {% set start_time = area_schedule[0].start_time %}
@@ -33,11 +35,9 @@ cards:
           {% set days = starts_in // 1440 %}
           {% set alert = "Load Shedding starts in {d}d {h}h {m}m ({next})".format(d=days, m=mins, h=hrs, next=as_timestamp(start_time) | timestamp_custom("%H:%M", True)) %}
 
-          {% if is_state_attr(stage_sensor, "stage", 0) %}
+          {% if starts_in > 1440 %}
             <ha-alert alert-type="success">{{ states(stage_sensor) }}</ha-alert>
-          {% elif starts_in > 1440  %}
-            <ha-alert alert-type="success">{{ alert }}</ha-alert>
-          {% elif not is_state_attr(stage_sensor, "stage", 0) and 60 < starts_in <= 1440 %}
+          {% elif 60 < starts_in <= 1440 %}
             <ha-alert alert-type="warning">{{ alert }}</ha-alert>
           {% else %}
             <ha-alert alert-type="error">{{ alert }}</ha-alert>
@@ -69,7 +69,6 @@ cards:
   - type: custom:atomic-calendar-revive
     enableModeChange: true
     firstDayOfWeek: 1
-    maxDaysToShow: 7
     refreshInterval: 1800
     entities:
       - calendar.load_shedding_forecast
@@ -77,14 +76,14 @@ cards:
     showMonth: true
     showWeekDay: true
     disableEventLink: true
-    showNoEventsForToday: false
+    showNoEventsForToday: true
     disableLocationLink: true
     showFullDayProgress: false
     showEventIcon: false
     showHiddenText: false
     showCalendarName: false
     calShowDescription: false
-    showLastCalendarWeek: false
+    showLastCalendarWeek: true
     disableCalEventLink: true
     disableCalLocationLink: true
     disableCalLink: true
@@ -95,3 +94,8 @@ cards:
     showRelativeTime: true
     showProgressBar: true
     showLocation: true
+    showDeclined: true
+    showMultiDayEventParts: false
+    showMultiDay: false
+    showLoader: false
+    maxDaysToShow: 3
