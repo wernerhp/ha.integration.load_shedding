@@ -339,35 +339,34 @@ class LoadSheddingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 schedule = stage_schedules.get(planned_stage, [])
 
                 for timeslot in schedule:
-                    area_start, area_end = timeslot.get(ATTR_START_TIME), timeslot.get(
-                        ATTR_END_TIME
-                    )
+                    start_time = timeslot.get(ATTR_START_TIME)
+                    end_time = timeslot.get(ATTR_END_TIME)
 
-                    if area_start >= planned_end_time:
+                    if start_time >= planned_end_time:
                         continue
-                    if area_end <= planned_start_time:
+                    if end_time <= planned_start_time:
                         continue
 
                     # Clip schedules that overlap planned start time and end time
                     if (
-                        area_start <= planned_start_time
-                        and area_end <= planned_end_time
+                        start_time <= planned_start_time
+                        and end_time <= planned_end_time
                     ):
-                        area_start = planned_start_time
+                        start_time = planned_start_time
                     if (
-                        area_start >= planned_start_time
-                        and area_end >= planned_end_time
+                        start_time >= planned_start_time
+                        and end_time >= planned_end_time
                     ):
-                        area_end = planned_end_time
+                        end_time = planned_end_time
 
-                    if area_start == area_end:
+                    if start_time == end_time:
                         continue
 
                     forecast.append(
                         {
                             ATTR_STAGE: planned_stage,
-                            ATTR_START_TIME: area_start,
-                            ATTR_END_TIME: area_end,
+                            ATTR_START_TIME: start_time,
+                            ATTR_END_TIME: end_time,
                         }
                     )
 

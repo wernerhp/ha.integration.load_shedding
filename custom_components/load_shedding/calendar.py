@@ -74,13 +74,22 @@ class LoadSheddingForecastCalendar(
         events = []
 
         for area in self.coordinator.areas:
-            area_events = self.data.get(area.id, {}).get(ATTR_FORECAST)
-            if area_events:
-                for area_event in area_events:
+            area_forecast = self.data.get(area.id, {}).get(ATTR_FORECAST)
+            if area_forecast:
+                for forecast in area_forecast:
+                    forecast_stage = str(forecast.get(ATTR_STAGE))
+                    forecast_start_time = forecast.get(ATTR_START_TIME)
+                    forecast_end_time = forecast.get(ATTR_END_TIME)
+
+                    if forecast_start_time <= start_date >= forecast_end_time:
+                        continue
+                    if forecast_start_time >= end_date <= forecast_end_time:
+                        continue
+
                     event: CalendarEvent = CalendarEvent(
-                        start=area_event.get(ATTR_START_TIME),
-                        end=area_event.get(ATTR_END_TIME),
-                        summary=str(area_event.get(ATTR_STAGE)),
+                        start=forecast_start_time,
+                        end=forecast_end_time,
+                        summary=forecast_stage,
                         location=area.name,
                         description=f"{NAME}",
                     )
