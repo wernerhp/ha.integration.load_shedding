@@ -152,29 +152,39 @@ class LoadSheddingStageSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        planned = self.data.get(ATTR_PLANNED, [])
-        if not planned:
+        # planned = self.data.get(ATTR_PLANNED, [])
+        if not self.data:
             return self._attr_extra_state_attributes
 
         now = datetime.now(timezone.utc)
-        data = get_sensor_attrs(planned, planned[0].get(ATTR_STAGE, Stage.UNKNOWN))
-        data[ATTR_PLANNED] = []
-        for event in planned:
-            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                continue
-            forecast = {
-                ATTR_STAGE: event.get(ATTR_STAGE).value,
-                ATTR_START_TIME: event.get(ATTR_START_TIME).isoformat(),
-            }
-            if ATTR_END_TIME in event:
-                forecast[ATTR_END_TIME] = event.get(ATTR_END_TIME).isoformat()
+        # data = get_sensor_attrs(planned, planned[0].get(ATTR_STAGE, Stage.UNKNOWN))
+        # data[ATTR_PLANNED] = []
+        data = dict(self._attr_extra_state_attributes)
+        if events := self.data.get(ATTR_PLANNED, []):
+            data[ATTR_PLANNED] = []
+            for event in events:
+                if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+                    continue
 
-            data[ATTR_PLANNED].append(forecast)
+                planned = {
+                    ATTR_STAGE: event.get(ATTR_STAGE),
+                    ATTR_START_TIME: event.get(ATTR_START_TIME),
+                }
+                if ATTR_END_TIME in event:
+                    planned[ATTR_END_TIME] = event.get(ATTR_END_TIME)
 
-        self._attr_extra_state_attributes.update(clean(data))
-        self._attr_extra_state_attributes[
-            ATTR_LAST_UPDATE
-        ] = self.coordinator.last_update
+                data[ATTR_PLANNED].append(planned)
+
+        cur_stage = Stage.NO_LOAD_SHEDDING
+        if planned := data[ATTR_PLANNED]:
+            cur_stage = planned[0].get(ATTR_STAGE, Stage.UNKNOWN)
+
+        attrs = get_sensor_attrs(data[ATTR_PLANNED], cur_stage)
+        attrs[ATTR_PLANNED] = data[ATTR_PLANNED]
+        attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
+        attrs = clean(attrs)
+
+        self._attr_extra_state_attributes.update(attrs)
         return self._attr_extra_state_attributes
 
     @callback
@@ -225,19 +235,22 @@ class LoadSheddingAreaSensorEntity(
         if not self.data:
             return self._attr_native_value
 
-        area = self.data.get(self.area.id, {})
-        events = area.get(ATTR_FORECAST, [])
+        events = self.data.get(ATTR_FORECAST, [])
 
         if not events:
             return self._attr_native_value
 
         now = datetime.now(timezone.utc)
-        event = events[0]
-        self._attr_native_value = cast(StateType, STATE_OFF)
-        if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
-            return self._attr_native_value
-        if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
-            self._attr_native_value = cast(StateType, STATE_ON)
+
+        for event in events:
+            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+                continue
+
+            self._attr_native_value = cast(StateType, STATE_OFF)
+            if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
+                return self._attr_native_value
+            if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
+                self._attr_native_value = cast(StateType, STATE_ON)
 
         return self._attr_native_value
 
@@ -251,26 +264,27 @@ class LoadSheddingAreaSensorEntity(
             return self._attr_extra_state_attributes
 
         now = datetime.now(timezone.utc)
-        data = self._attr_extra_state_attributes
-        area_events = self.data.get(self.area.id, {}).get(ATTR_FORECAST)
-        if area_events:
-            data = get_sensor_attrs(area_events)
+        data = dict(self._attr_extra_state_attributes)
+        if events := self.data.get(ATTR_FORECAST, []):
             data[ATTR_FORECAST] = []
-            for event in area_events:
+            for event in events:
                 if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
                     continue
-                data[ATTR_FORECAST].append(
-                    {
-                        ATTR_STAGE: event.get(ATTR_STAGE).value,
-                        ATTR_START_TIME: event.get(ATTR_START_TIME).isoformat(),
-                        ATTR_END_TIME: event.get(ATTR_END_TIME).isoformat(),
-                    }
-                )
 
-        self._attr_extra_state_attributes.update(clean(data))
-        self._attr_extra_state_attributes[
-            ATTR_LAST_UPDATE
-        ] = self.coordinator.last_update
+                forecast = {
+                    ATTR_STAGE: event.get(ATTR_STAGE),
+                    ATTR_START_TIME: event.get(ATTR_START_TIME),
+                    ATTR_END_TIME: event.get(ATTR_END_TIME),
+                }
+
+                data[ATTR_FORECAST].append(forecast)
+
+        attrs = get_sensor_attrs(data[ATTR_FORECAST])
+        attrs[ATTR_FORECAST] = data[ATTR_FORECAST]
+        attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
+        attrs = clean(attrs)
+
+        self._attr_extra_state_attributes.update(attrs)
         return self._attr_extra_state_attributes
 
     @callback
@@ -324,10 +338,11 @@ class LoadSheddingQuotaSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        self._attr_extra_state_attributes.update(self.data)
-        self._attr_extra_state_attributes[
-            ATTR_LAST_UPDATE
-        ] = self.coordinator.last_update
+        attrs = self.data
+        attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
+        attrs = clean(attrs)
+
+        self._attr_extra_state_attributes.update(attrs)
         return self._attr_extra_state_attributes
 
     @callback

@@ -28,7 +28,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from load_shedding.libs.sepush import SePush, SePushError
-from load_shedding.providers import Area, Stage
+from load_shedding.providers import Area, Stage, to_utc
 from .const import (
     API,
     AREA_UPDATE_INTERVAL,
@@ -173,12 +173,13 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data = {}
             statuses = esp.get("status", {})
             for idx, area in statuses.items():
+                stage = Stage(int(area.get("stage", "0")))
+                start_time = datetime.fromisoformat(area.get("stage_updated"))
+                start_time = start_time.replace(second=0, microsecond=0)
                 planned = [
                     {
-                        ATTR_STAGE: Stage(int(area.get("stage", "0"))),
-                        ATTR_START_TIME: datetime.fromisoformat(
-                            area.get("stage_updated")
-                        ).astimezone(timezone.utc),
+                        ATTR_STAGE: stage,
+                        ATTR_START_TIME: start_time.astimezone(timezone.utc),
                     }
                 ]
 
@@ -188,15 +189,19 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     prev_end = datetime.fromisoformat(
                         next_stage.get("stage_start_timestamp")
                     )
+                    prev_end = prev_end.replace(second=0, microsecond=0)
                     planned[i][ATTR_END_TIME] = prev_end.astimezone(timezone.utc)
 
                     # Next
+                    stage = Stage(int(next_stage.get("stage", "0")))
+                    start_time = datetime.fromisoformat(
+                        next_stage.get("stage_start_timestamp")
+                    )
+                    start_time = start_time.replace(second=0, microsecond=0)
                     planned.append(
                         {
-                            ATTR_STAGE: Stage(int(next_stage.get("stage", "0"))),
-                            ATTR_START_TIME: datetime.fromisoformat(
-                                next_stage.get("stage_start_timestamp")
-                            ).astimezone(timezone.utc),
+                            ATTR_STAGE: stage,
+                            ATTR_START_TIME: start_time.astimezone(timezone.utc),
                         }
                     )
 
@@ -377,8 +382,8 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     start_time = timeslot.get(ATTR_START_TIME)
                     end_time = timeslot.get(ATTR_END_TIME)
 
-                    if end_time < now:
-                        continue
+                    # if end_time < now:
+                    #     continue
 
                     if start_time >= planned_end_time:
                         continue

@@ -3,10 +3,14 @@ cards:
   - type: custom:mushroom-chips-card
     chips:
       - type: entity
+        entity: sensor.load_shedding_stage_capetown
+        icon: ''
+      - type: entity
         entity: sensor.load_shedding_stage_eskom
         icon: ''
       - type: entity
         entity: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
+        icon: ''
       - type: template
         content: '{{state_attr(entity, "count")}}/{{state_attr(entity, "limit")}}'
         entity: sensor.sepush_api_quota
@@ -18,7 +22,9 @@ cards:
     content: >
       {% set stage_sensor = "sensor.load_shedding_stage_eskom" %}
 
-      {% set area_sensor = "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape" %}
+      {% set area_sensor =
+      "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape"
+      %}
 
       {% set area_schedule = state_attr(area_sensor, "forecast") %}
 
@@ -74,7 +80,7 @@ cards:
     showMonth: true
     showWeekDay: true
     disableEventLink: true
-    showNoEventsForToday: false
+    showNoEventsForToday: true
     disableLocationLink: true
     showFullDayProgress: false
     showEventIcon: false
