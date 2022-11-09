@@ -246,11 +246,17 @@ class LoadSheddingAreaSensorEntity(
             if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
                 continue
 
-            self._attr_native_value = cast(StateType, STATE_OFF)
-            if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
-                return self._attr_native_value
             if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
                 self._attr_native_value = cast(StateType, STATE_ON)
+                break
+
+            if event.get(ATTR_START_TIME) > now:
+                self._attr_native_value = cast(StateType, STATE_OFF)
+                break
+
+            if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
+                self._attr_native_value = cast(StateType, STATE_OFF)
+                break
 
         return self._attr_native_value
 
