@@ -103,6 +103,7 @@ class LoadSheddingStageSensorEntity(
         """Initialize."""
         super().__init__(coordinator)
         self.idx = idx
+        self.data = self.coordinator.data.get(self.idx)
 
         self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} stage",
@@ -110,7 +111,6 @@ class LoadSheddingStageSensorEntity(
             name=f"{DOMAIN} stage",
             entity_registry_enabled_default=True,
         )
-        self.data = self.coordinator.data.get(self.idx)
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_{self.idx}"
         self.entity_id = f"{DOMAIN}.{DOMAIN}_stage_{idx}"
 
@@ -191,7 +191,7 @@ class LoadSheddingStageSensorEntity(
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
-            self.data = data
+            self.data = data.get(self.idx)
             self.async_write_ha_state()
 
 
@@ -205,8 +205,8 @@ class LoadSheddingAreaSensorEntity(
     def __init__(self, coordinator: CoordinatorEntity, area: Area) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        self.data = self.coordinator.data.get(area.id)
         self.area = area
+        self.data = self.coordinator.data.get(self.area.id)
 
         self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} schedule {area.id}",
@@ -297,7 +297,7 @@ class LoadSheddingAreaSensorEntity(
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
-            self.data = data
+            self.data = data.get(self.area.id)
             self.async_write_ha_state()
 
 
