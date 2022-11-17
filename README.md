@@ -20,15 +20,21 @@ A Home Assistant integration to track your load schedding schedule.
 6. [Support](https://github.com/wernerhp/ha.integration.load_shedding/blob/master/README.md#support)
 
 # Support 
-If you find this integration useful, please consider supporting my work by [buying me a coffee](https://www.buymeacoffee.com/wernerhp) or making a donation in the form of Bitcoin.
+If you find this integration useful, please consider supporting my work by [buying me a coffee](https://www.buymeacoffee.com/wernerhp) or making a donation in the form of Bitcoin or SnapScan.
 
+### Snapscan
+<img width="200" alt="image" src="https://user-images.githubusercontent.com/2578772/202417621-17f479cc-4cce-4108-a76e-f6f75043384d.png">
+
+
+### Buy me a coffee
 <a href="https://www.buymeacoffee.com/wernerhp" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
 
 Sign-up for a free Luno wallet using [this invite link](http://www.luno.com/invite/X48WY) or enter the code **X48WY** in the **Rewards** section and we can both earn **R 25.00 free BTC** after investing our first R 500.
 
-**Bitcoin** `3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE`
+### Bitcoin
+`3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE`  
+<img width="200" alt="image" src="img_9.png">
 
-![](img_9.png)
 
 # Manual Install
 <details>
