@@ -20,10 +20,7 @@ A Home Assistant integration to track your load schedding schedule.
 6. [Support](https://github.com/wernerhp/ha.integration.load_shedding/blob/master/README.md#support)
 
 # Support 
-If you find this integration useful, please consider supporting my work by [buying me a coffee](https://www.buymeacoffee.com/wernerhp) or making a donation in the form of Bitcoin or SnapScan.
-
-### Snapscan
-<img width="200" alt="image" src="https://user-images.githubusercontent.com/2578772/202417621-17f479cc-4cce-4108-a76e-f6f75043384d.png">
+If you find this integration useful, please consider supporting my work by [buying me a coffee](https://www.buymeacoffee.com/wernerhp) or making a donation in the form of Bitcoin.
 
 
 ### Buy me a coffee
