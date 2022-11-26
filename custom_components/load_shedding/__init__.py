@@ -63,16 +63,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
-    api_key: str = entry.data.get(CONF_API_KEY)
-    sepush: SePush = SePush(token=api_key)
     if not hass.data.get(DOMAIN):
         hass.data.setdefault(DOMAIN, {})
+
+    sepush: SePush = None
+    if api_key := entry.options.get(CONF_API_KEY):
+        sepush: SePush = SePush(token=api_key)
+    if not sepush:
+        return False
 
     stage_coordinator = LoadSheddingStageCoordinator(hass, sepush)
     stage_coordinator.update_interval = timedelta(
         seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
-    await stage_coordinator.async_config_entry_first_refresh()
 
     area_coordinator = LoadSheddingAreaCoordinator(
         hass, sepush, stage_coordinator=stage_coordinator
@@ -80,17 +83,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     area_coordinator.update_interval = timedelta(
         seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
-    for conf in entry.options.get(CONF_AREAS, []).values():
+    for conf in entry.options.get(CONF_AREAS, {}).values():
         area = Area(
             id=conf.get(CONF_ID),
             name=conf.get(CONF_NAME),
         )
         area_coordinator.add_area(area)
-    await area_coordinator.async_config_entry_first_refresh()
+    if not area_coordinator.areas:
+        return False
 
     quota_coordinator = LoadSheddingQuotaCoordinator(hass, sepush)
     quota_coordinator.update_interval = timedelta(seconds=QUOTA_UPDATE_INTERVAL)
-    await quota_coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = {
         ATTR_STAGE: stage_coordinator,
@@ -99,6 +102,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
+
+    await stage_coordinator.async_config_entry_first_refresh()
+    await area_coordinator.async_config_entry_first_refresh()
+    await quota_coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
@@ -125,6 +132,19 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Migrate old entry."""
     _LOGGER.debug("Migrating from version %s", config_entry.version)
+
+    if config_entry.version == 3:
+        old_data = {**config_entry.data}
+        old_options = {**config_entry.options}
+        new_data = {}
+        new_options = {
+            CONF_API_KEY: old_data.get(CONF_API_KEY),
+            CONF_AREAS: old_options.get(CONF_AREAS, {}),
+        }
+        config_entry.version = 4
+        hass.config_entries.async_update_entry(
+            config_entry, data=new_data, options=new_options
+        )
 
     _LOGGER.info("Migration to version %s successful", config_entry.version)
     return True

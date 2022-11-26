@@ -3,19 +3,23 @@ entities:
   - type: custom:template-entity-row
     icon: mdi:lightning-bolt-outline
     name: Status
-    entity: sensor.load_shedding_eskom_stage
-    active: '{{ not is_state("sensor.load_shedding_eskom_stage", "No Load Shedding") }}'
-    state: '{{states("sensor.load_shedding_eskom_stage")}}'
+    entity: sensor.load_shedding_stage_eskom
+    active: '{{ not is_state("sensor.load_shedding_stage_eskom", "No Load Shedding") }}'
+    state: '{{states("sensor.load_shedding_stage_eskom")}}'
   - type: custom:template-entity-row
     icon: mdi:timer-outline
     name: Milnerton
-    active: '{{ states("sensor.load_shedding_milnerton_14") == "on" }}'
+    active: >-
+      {{ states("sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape") == "on" }}
     state: >-
-      {{ (state_attr("sensor.load_shedding_milnerton_14", "start_time") | as_datetime | as_local).strftime("%H:%M") }}  -  {{ (state_attr("sensor.load_shedding_milnerton_14", "end_time") | as_datetime | as_local).strftime("%H:%M") }}
+      {{ (state_attr("sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape",
+      "next_start_time") | as_datetime | as_local).strftime("%H:%M") }} -  {{
+      (state_attr("sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape",
+      "next_end_time") | as_datetime | as_local).strftime("%H:%M") }}
     secondary: >-
-      {% if states("sensor.load_shedding_milnerton_14") == "off" %}
-      Starts in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton_14", "starts_in")) }}
-      {% else %}
-      Ends in {{ timedelta(minutes=state_attr("sensor.load_shedding_milnerton_14", "ends_in")) }}
-      {% endif %}
-    entity: sensor.load_shedding_milnerton_14
+      {% if states("sensor.load_shedding_milnerton_14") == "off" %} Starts in {{
+      timedelta(minutes=state_attr("sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape",
+      "next_start_time")) }} {% else %} Ends in {{
+      timedelta(minutes=state_attr("sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape",
+      "next_end_time")) }} {% endif %}
+    entity: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
