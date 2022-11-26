@@ -24,6 +24,7 @@ from .const import (
     ATTR_START_TIME,
     DOMAIN,
     NAME,
+    CONF_MULTI_STAGE_EVENTS,
 )
 
 
@@ -34,7 +35,13 @@ async def async_setup_entry(
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     area_coordinator = coordinators.get(ATTR_AREA)
 
-    entities: list[Entity] = [LoadSheddingForecastCalendar(area_coordinator)]
+    multi_stage_events = False
+    if entry.options.get(CONF_MULTI_STAGE_EVENTS):
+        multi_stage_events = True
+
+    entities: list[Entity] = [
+        LoadSheddingForecastCalendar(area_coordinator, multi_stage_events)
+    ]
     async_add_entities(entities)
 
 
@@ -43,7 +50,9 @@ class LoadSheddingForecastCalendar(
 ):
     """Define a LoadShedding Calendar entity."""
 
-    def __init__(self, coordinator: CoordinatorEntity) -> None:
+    def __init__(
+        self, coordinator: CoordinatorEntity, multi_stage_events: bool
+    ) -> None:
         super().__init__(coordinator)
         self.data = self.coordinator.data
 
@@ -52,6 +61,7 @@ class LoadSheddingForecastCalendar(
         )
         self._event: CalendarEvent | None = None
         self.entity_id = f"{DOMAIN}.{DOMAIN}_forecast"
+        self.multi_stage_events = multi_stage_events
 
     @property
     def name(self) -> str | None:
@@ -92,6 +102,19 @@ class LoadSheddingForecastCalendar(
                         description=f"{NAME}",
                     )
                     events.append(event)
+
+                if not self.multi_stage_events:
+                    continue
+
+                # Multi-stage events
+                for i, cur in enumerate(events):
+                    if i + 1 >= len(events):
+                        continue
+                    nxt = events[i + 1]
+                    if cur.end == nxt.start:
+                        cur.summary = f"{cur.summary}/{nxt.summary}"
+                        cur.end = nxt.end
+                        del events[i + 1]
 
         if events:
             self._event = events[0]
