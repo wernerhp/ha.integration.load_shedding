@@ -30,7 +30,7 @@ Sign-up for a free Luno wallet using [this invite link](http://www.luno.com/invi
 
 ### Bitcoin
 `3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE`  
-<img width="200" alt="image" src="img_9.png">
+<img width="200" alt="Bitcoin address: 3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE" src="img_9.png">
 
 
 # Manual Install
@@ -149,6 +149,5 @@ rest_command:
       content_type: "application/json; charset=utf-8"
       verify_ssl: true
 ```
-- [Load Shedding (Start)](examples/automation3.yaml)  
-- [Load Shedding (End)](examples/automation4.yaml)
+- [Load Shedding (Start/End)](examples/automation3.yaml)
 </details>

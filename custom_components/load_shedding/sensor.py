@@ -176,11 +176,14 @@ class LoadSheddingStageSensorEntity(
                 data[ATTR_PLANNED].append(planned)
 
         cur_stage = Stage.NO_LOAD_SHEDDING
-        if planned := data[ATTR_PLANNED]:
+
+        planned = []
+        if ATTR_PLANNED in data:
+            planned = data[ATTR_PLANNED]
             cur_stage = planned[0].get(ATTR_STAGE, Stage.UNKNOWN)
 
-        attrs = get_sensor_attrs(data[ATTR_PLANNED], cur_stage)
-        attrs[ATTR_PLANNED] = data[ATTR_PLANNED]
+        attrs = get_sensor_attrs(planned, cur_stage)
+        attrs[ATTR_PLANNED] = planned
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
@@ -238,7 +241,7 @@ class LoadSheddingAreaSensorEntity(
         events = self.data.get(ATTR_FORECAST, [])
 
         if not events:
-            return self._attr_native_value
+            return STATE_OFF
 
         now = datetime.now(timezone.utc)
 
@@ -285,8 +288,12 @@ class LoadSheddingAreaSensorEntity(
 
                 data[ATTR_FORECAST].append(forecast)
 
-        attrs = get_sensor_attrs(data[ATTR_FORECAST])
-        attrs[ATTR_FORECAST] = data[ATTR_FORECAST]
+        forecast = []
+        if ATTR_FORECAST in data:
+            forecast = data[ATTR_FORECAST]
+
+        attrs = get_sensor_attrs(forecast)
+        attrs[ATTR_FORECAST] = forecast
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 

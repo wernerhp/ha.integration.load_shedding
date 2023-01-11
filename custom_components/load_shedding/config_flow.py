@@ -25,6 +25,7 @@ from .const import (
     CONF_ADD_AREA,
     CONF_DELETE_AREA,
     CONF_MULTI_STAGE_EVENTS,
+    CONF_MIN_EVENT_DURATION,
     CONF_SETUP_API,
 )
 
@@ -271,6 +272,10 @@ class LoadSheddingOptionsFlowHandler(OptionsFlow):
                     CONF_MULTI_STAGE_EVENTS,
                     default=self.opts.get(CONF_MULTI_STAGE_EVENTS, False),
                 ): bool,
+                vol.Optional(
+                    CONF_MIN_EVENT_DURATION,
+                    default=self.opts.get(CONF_MIN_EVENT_DURATION, 30),
+                ): int,
             }
         )
 
@@ -282,6 +287,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlow):
             # if user_input.get(CONF_ACTION) == CONF_DELETE_AREA:
             #     return await self.async_step_delete_area()
             self.opts[CONF_MULTI_STAGE_EVENTS] = user_input.get(CONF_MULTI_STAGE_EVENTS)
+            self.opts[CONF_MIN_EVENT_DURATION] = user_input.get(CONF_MIN_EVENT_DURATION)
             return self.async_create_entry(title=NAME, data=self.opts)
 
         return self.async_show_form(

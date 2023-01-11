@@ -3,10 +3,12 @@ description: ""
 trigger:
   - platform: template
     value_template: >-
-      {{ timedelta(minutes=(state_attr("sensor.load_shedding_milnerton_14", "starts_in"))) == timedelta(minutes=15) }}
+      {{
+      timedelta(minutes=(state_attr("sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape",
+      "starts_in"))) == timedelta(minutes=15) }}
     enabled: false
   - platform: numeric_state
-    entity_id: sensor.load_shedding_milnerton_14
+    entity_id: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
     attribute: starts_in
     below: "120"
 condition:
@@ -14,7 +16,7 @@ condition:
     conditions:
       - condition:
           - condition: numeric_state
-            entity_id: sensor.load_shedding_south_africa_stage
+            entity_id: sensor.load_shedding_stage_eskom
             attribute: stage
             above: "0"
         enabled: true

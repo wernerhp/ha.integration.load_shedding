@@ -1,26 +1,44 @@
-alias: Load Shedding (Start)
-description: ''
+alias: Load Shedding (Start/End)
+description: ""
 trigger:
   - platform: state
     entity_id:
-      - sensor.load_shedding_milnerton
-    to: 'on'
-    from: 'off'
+      - sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
+    to: "on"
+    from: "off"
 condition:
-  - condition: not
-    conditions:
-      - condition: state
-        entity_id: sensor.load_shedding_stage
-        state: Unknown
-      - condition: state
-        entity_id: sensor.load_shedding_stage
-        state: No Load Shedding
+  - condition: numeric_state
+    entity_id: sensor.load_shedding_stage_eskom
+    attribute: stage
+    above: "0"
 action:
   - service: rest_command.slack_status
     data:
-      emoji: ':loadsheddingtransparent:'
+      emoji: ":loadsheddingtransparent:"
       status: >-
         Load Shedding until {{
-        (state_attr('sensor.load_shedding_milnerton','end_time') | as_datetime |
-        as_local).strftime('%H:%M (%Z)') }}
+        (state_attr('sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape','end_time')
+        | as_datetime | as_local).strftime('%H:%M (%Z)') }}
+      status_expiration: >-
+        {{
+        state_attr('sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape','end_time')
+        | as_timestamp| int }}
+    enabled: false
+  - if:
+      - condition: time
+        after: "17:00:00"
+        weekday:
+          - sat
+          - fri
+          - thu
+          - wed
+          - tue
+          - mon
+          - sun
+    then:
+      - service: light.turn_on
+        data:
+          brightness_pct: 5
+        target:
+          area_id: 42ace1a6ae2940f481359957243acb92
 mode: single

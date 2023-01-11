@@ -57,6 +57,7 @@
                 "data": {
                     "add_area": "Add area",
                     "delete_area": "Remove area",
+                    "min_event_duration": "Min. event duration (mins)",
                     "multi_stage_events": "Multi-stage events",
                     "setup_api": "Configure API"
                 },

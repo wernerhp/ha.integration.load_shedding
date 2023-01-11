@@ -49,7 +49,9 @@
         "data": {
           "add_area": "Add area",
           "delete_area": "Remove area",
-          "setup_api": "Configure API"
+          "setup_api": "Configure API",
+          "multi_stage_events": "Multi-stage events",
+          "min_event_duration": "Min. event duration (mins)"
         }
       },
       "sepush": {

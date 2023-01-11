@@ -3,9 +3,9 @@ type: vertical-stack
 cards:
   - type: markdown
     content: >
-      {% set stage_sensor = "sensor.load_shedding_south_africa_stage" %}
+      {% set stage_sensor = "sensor.load_shedding_stage_eskom" %}
 
-      {% set area_sensor = "sensor.load_shedding_milnerton_14" %}
+      {% set area_sensor = "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape" %}
 
 
 

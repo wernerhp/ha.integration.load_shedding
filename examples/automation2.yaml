@@ -1,28 +1,26 @@
 alias: Load Shedding (Warning)
-description: ''
+description: ""
 trigger:
-  - platform: template
-    value_template: >-
-      {{ timedelta(minutes=(state_attr("sensor.load_shedding_milnerton", "starts_in"))) == timedelta(minutes=15) }}
+  - platform: numeric_state
+    entity_id: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
+    attribute: starts_in
+    below: "15"
 condition:
   - condition: and
     conditions:
+      - condition: numeric_state
+        entity_id: sensor.load_shedding_stage_eskom
+        attribute: stage
+        above: "0"
       - condition: time
         after: input_datetime.alarm
         before: input_datetime.sleep
-      - condition: not
-        conditions:
-          - condition: state
-            entity_id: sensor.load_shedding_stage
-            state: Unknown
-          - condition: state
-            entity_id: sensor.load_shedding_stage
-            state: No Load Shedding
 action:
   - service: telegram_bot.send_message
     data:
       message: Load Shedding starts in 15 minutes.
       title: Load Shedding
+    enabled: false
   - service: media_player.volume_set
     data:
       volume_level: 0.7
@@ -33,4 +31,9 @@ action:
       entity_id: media_player.assistant_speakers
       message: Load Shedding starts in 15 minutes.
       cache: true
+  - service: rest_command.slack_status
+    data:
+      emoji: ":gopher-coffee:"
+      status: "\"Grabbing coffee before it's too late...\""
+    enabled: false
 mode: single

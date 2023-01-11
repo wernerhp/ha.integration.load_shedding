@@ -2,12 +2,12 @@ type: vertical-stack
 cards:
   - type: entities
     entities:
-      - entity: sensor.load_shedding_cape_town_stage
-      - entity: sensor.load_shedding_eskom_stage
+      - entity: sensor.load_shedding_stage_cape_town
+      - entity: sensor.load_shedding_stage_eskom
   - type: markdown
     content: >
-      {% set stage_sensor = "sensor.load_shedding_south_africa_stage" %}
-      {% set area_sensor = "sensor.load_shedding_milnerton_14" %}
+      {% set stage_sensor = "sensor.load_shedding_stage_eskom" %}
+      {% set area_sensor = "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape" %}
 
       {% set start_time = state_attr(stage_sensor, "start_time") %}
       {% set end_time = state_attr(stage_sensor, "end_time") %}
