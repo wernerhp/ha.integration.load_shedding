@@ -124,7 +124,7 @@ Replace `sensor.load_shedding_south_africa_stage`, `sensor.load_shedding_milnert
 - [Load Shedding (Warning)](examples/automation2.yaml)
 
 ### 2 hour warning on speaker
-- [Load Shedding (Warning) (2hr)](examples/automation3.yaml)
+- [Load Shedding (Warning) (2hr)](examples/automation5.yaml)
 
 ### Update your Slack status
 
