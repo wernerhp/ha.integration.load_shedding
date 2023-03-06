@@ -50,7 +50,7 @@ cards:
           <td align="left">
           {{ as_timestamp(forecast.start_time) | timestamp_custom("%H:%M", True) }} - {{ as_timestamp(forecast.end_time) | timestamp_custom("%H:%M", True) }}
           </td>
-          <td align="right">Stage {{ forecast.stage }}</td>
+          <td align="right">{{ forecast.stage }}</td>
         </tr>
         {% endfor %}
         </tbody>
