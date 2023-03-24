@@ -61,7 +61,7 @@ cards:
     primary: Quota {{state_attr(entity, "count")}}/{{state_attr(entity, "limit")}}
     secondary: ''
     icon: mdi:lightning-bolt
-    entity: sensor.load_shedding_sepush_quota
+    entity: sensor.load_shedding_sepush_api_quota
     tap_action:
       action: more-info
     icon_color: ''
