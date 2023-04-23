@@ -44,6 +44,7 @@ from .const import (
     ATTR_STAGE,
     ATTR_START_TIME,
     CONF_AREAS,
+    CONF_MIN_EVENT_DURATION,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     MANUFACTURER,
@@ -53,7 +54,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.CALENDAR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.CALENDAR]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -61,45 +62,52 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
-    api_key: str = entry.data.get(CONF_API_KEY)
-    sepush: SePush = SePush(token=api_key)
     if not hass.data.get(DOMAIN):
         hass.data.setdefault(DOMAIN, {})
 
+    sepush: SePush = None
+    if api_key := config_entry.options.get(CONF_API_KEY):
+        sepush: SePush = SePush(token=api_key)
+    if not sepush:
+        return False
+
     stage_coordinator = LoadSheddingStageCoordinator(hass, sepush)
     stage_coordinator.update_interval = timedelta(
-        seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        seconds=config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
-    await stage_coordinator.async_config_entry_first_refresh()
 
     area_coordinator = LoadSheddingAreaCoordinator(
         hass, sepush, stage_coordinator=stage_coordinator
     )
     area_coordinator.update_interval = timedelta(
-        seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        seconds=config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
-    for conf in entry.options.get(CONF_AREAS, []).values():
+    for conf in config_entry.options.get(CONF_AREAS, {}).values():
         area = Area(
             id=conf.get(CONF_ID),
             name=conf.get(CONF_NAME),
         )
         area_coordinator.add_area(area)
-    await area_coordinator.async_config_entry_first_refresh()
+    if not area_coordinator.areas:
+        return False
 
     quota_coordinator = LoadSheddingQuotaCoordinator(hass, sepush)
     quota_coordinator.update_interval = timedelta(seconds=QUOTA_UPDATE_INTERVAL)
-    await quota_coordinator.async_config_entry_first_refresh()
 
-    hass.data[DOMAIN][entry.entry_id] = {
+    hass.data[DOMAIN][config_entry.entry_id] = {
         ATTR_STAGE: stage_coordinator,
         ATTR_AREA: area_coordinator,
         ATTR_QUOTA: quota_coordinator,
     }
 
-    entry.async_on_unload(entry.add_update_listener(update_listener))
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    config_entry.async_on_unload(config_entry.add_update_listener(update_listener))
+
+    await stage_coordinator.async_config_entry_first_refresh()
+    await area_coordinator.async_config_entry_first_refresh()
+    await quota_coordinator.async_config_entry_first_refresh()
+    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
     return True
 
@@ -112,19 +120,32 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     return unload_ok
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_reload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     """Reload config entry."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.config_entries.async_reload(config_entry.entry_id)
 
 
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Update listener."""
-    return await hass.config_entries.async_reload(entry.entry_id)
+    return await hass.config_entries.async_reload(config_entry.entry_id)
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Migrate old entry."""
     _LOGGER.debug("Migrating from version %s", config_entry.version)
+
+    if config_entry.version == 3:
+        old_data = {**config_entry.data}
+        old_options = {**config_entry.options}
+        new_data = {}
+        new_options = {
+            CONF_API_KEY: old_data.get(CONF_API_KEY),
+            CONF_AREAS: old_options.get(CONF_AREAS, {}),
+        }
+        config_entry.version = 4
+        hass.config_entries.async_update_entry(
+            config_entry, data=new_data, options=new_options
+        )
 
     _LOGGER.info("Migration to version %s successful", config_entry.version)
     return True
@@ -139,8 +160,9 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = {}
         self.sepush = sepush
         self.last_update: datetime | None = None
+        self.update_method = self.update_stage
 
-    async def _async_update_data(self) -> dict:
+    async def update_stage(self) -> dict:
         """Retrieve latest load shedding data."""
 
         now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -238,12 +260,13 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_update: datetime | None = None
         self.areas: list[Area] = []
         self.stage_coordinator = stage_coordinator
+        self.update_method = self.update_area
 
     def add_area(self, area: Area = None) -> None:
         """Add a area to update."""
         self.areas.append(area)
 
-    async def _async_update_data(self) -> dict:
+    async def update_area(self) -> dict:
         """Retrieve latest load shedding data."""
 
         now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -268,17 +291,17 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.data
 
     async def async_update_area(self) -> dict:
-        """Retrieve schedule data."""
-        areas_stage_schedules: dict = {}
+        """Retrieve area data."""
+        area_id_data: dict = {}
 
         for area in self.areas:
-            # Get forecast for area
-            events = []
             try:
                 esp = await self.hass.async_add_executor_job(self.sepush.area, area.id)
             except SePushError as err:
                 raise UpdateFailed(err) from err
 
+            # Get events for area
+            events = []
             for event in esp.get("events", {}):
                 note = event.get("note")
                 parts = str(note).split(" ")
@@ -298,7 +321,6 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Get schedule for area
             stage_schedule = {}
-            sast = timezone(timedelta(hours=+2), "SAST")
             for day in esp.get("schedule", {}).get("days", []):
                 date = datetime.strptime(day.get("date"), "%Y-%m-%d")
                 stage_timeslots = day.get("stages", [])
@@ -308,30 +330,8 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         stage_schedule[stage] = []
                     for timeslot in timeslots:
                         start_str, end_str = timeslot.strip().split("-")
-                        start = (
-                            datetime.strptime(start_str, "%H:%M")
-                            .replace(
-                                year=date.year,
-                                month=date.month,
-                                day=date.day,
-                                second=0,
-                                microsecond=0,
-                                tzinfo=sast,
-                            )
-                            .astimezone(timezone.utc)
-                        )
-                        end = (
-                            datetime.strptime(end_str, "%H:%M")
-                            .replace(
-                                year=date.year,
-                                month=date.month,
-                                day=date.day,
-                                second=0,
-                                microsecond=0,
-                                tzinfo=sast,
-                            )
-                            .astimezone(timezone.utc)
-                        )
+                        start = utc_dt(date, datetime.strptime(start_str, "%H:%M"))
+                        end = utc_dt(date, datetime.strptime(end_str, "%H:%M"))
                         if end < start:
                             end = end + timedelta(days=1)
                         stage_schedule[stage].append(
@@ -342,12 +342,12 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             }
                         )
 
-            areas_stage_schedules[area.id] = {
+            area_id_data[area.id] = {
                 ATTR_EVENTS: events,
                 ATTR_SCHEDULE: stage_schedule,
             }
 
-        return areas_stage_schedules
+        return area_id_data
 
     async def async_area_forecast(self) -> None:
         """Derive area forecast from planned stages and area schedule."""
@@ -358,8 +358,6 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         stages = self.stage_coordinator.data
         eskom_stages = stages.get(eskom, {}).get(ATTR_PLANNED, [])
         cape_town_stages = stages.get(cape_town, {}).get(ATTR_PLANNED, [])
-
-        now = datetime.now(timezone.utc)
 
         for area_id, data in self.data.items():
             stage_schedules = data.get(ATTR_SCHEDULE)
@@ -382,9 +380,6 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     start_time = timeslot.get(ATTR_START_TIME)
                     end_time = timeslot.get(ATTR_END_TIME)
 
-                    # if end_time < now:
-                    #     continue
-
                     if start_time >= planned_end_time:
                         continue
                     if end_time <= planned_start_time:
@@ -405,6 +400,13 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if start_time == end_time:
                         continue
 
+                    # Minimum event duration
+                    min_event_dur = self.stage_coordinator.config_entry.options.get(
+                        CONF_MIN_EVENT_DURATION, 30
+                    )  # minutes
+                    if end_time - start_time < timedelta(minutes=min_event_dur):
+                        continue
+
                     forecast.append(
                         {
                             ATTR_STAGE: planned_stage,
@@ -416,6 +418,20 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data[ATTR_FORECAST] = forecast
 
 
+def utc_dt(date: datetime, time: datetime) -> datetime:
+    """Given a date and time in SAST, this function returns a datetime object in UTC"""
+    sast = timezone(timedelta(hours=+2), "SAST")
+
+    return time.replace(
+        year=date.year,
+        month=date.month,
+        day=date.day,
+        second=0,
+        microsecond=0,
+        tzinfo=sast,
+    ).astimezone(timezone.utc)
+
+
 class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding Quota."""
 
@@ -425,8 +441,9 @@ class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = {}
         self.sepush = sepush
         self.last_update: datetime | None = None
+        self.update_method = self.update_quota
 
-    async def _async_update_data(self) -> dict:
+    async def update_quota(self) -> dict:
         """Retrieve latest load shedding data."""
 
         now = datetime.now(timezone.utc).replace(microsecond=0)

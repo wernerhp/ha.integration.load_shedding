@@ -71,7 +71,7 @@ async def async_setup_entry(
     """Add LoadShedding entities from a config_entry."""
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     stage_coordinator = coordinators.get(ATTR_STAGE)
-    area_coordinator = coordinators.get(ATTR_AREA)
+    # area_coordinator = coordinators.get(ATTR_AREA)
     quota_coordinator = coordinators.get(ATTR_QUOTA)
 
     entities: list[Entity] = []
@@ -79,9 +79,9 @@ async def async_setup_entry(
         stage_entity = LoadSheddingStageSensorEntity(stage_coordinator, idx)
         entities.append(stage_entity)
 
-    for area in area_coordinator.areas:
-        area_entity = LoadSheddingAreaSensorEntity(area_coordinator, area)
-        entities.append(area_entity)
+    # for area in area_coordinator.areas:
+    #     area_entity = LoadSheddingAreaSensorEntity(area_coordinator, area)
+    #     entities.append(area_entity)
 
     quota_entity = LoadSheddingQuotaSensorEntity(quota_coordinator)
     entities.append(quota_entity)
@@ -176,11 +176,14 @@ class LoadSheddingStageSensorEntity(
                 data[ATTR_PLANNED].append(planned)
 
         cur_stage = Stage.NO_LOAD_SHEDDING
-        if planned := data[ATTR_PLANNED]:
+
+        planned = []
+        if ATTR_PLANNED in data:
+            planned = data[ATTR_PLANNED]
             cur_stage = planned[0].get(ATTR_STAGE, Stage.UNKNOWN)
 
-        attrs = get_sensor_attrs(data[ATTR_PLANNED], cur_stage)
-        attrs[ATTR_PLANNED] = data[ATTR_PLANNED]
+        attrs = get_sensor_attrs(planned, cur_stage)
+        attrs[ATTR_PLANNED] = planned
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
@@ -195,110 +198,114 @@ class LoadSheddingStageSensorEntity(
             self.async_write_ha_state()
 
 
-class LoadSheddingAreaSensorEntity(
-    LoadSheddingDevice, CoordinatorEntity, RestoreSensor
-):
-    """Define a LoadShedding Area sensor entity."""
+# class LoadSheddingAreaSensorEntity(
+#     LoadSheddingDevice, CoordinatorEntity, RestoreSensor
+# ):
+#     """Define a LoadShedding Area sensor entity."""
 
-    coordinator: CoordinatorEntity
+#     coordinator: CoordinatorEntity
 
-    def __init__(self, coordinator: CoordinatorEntity, area: Area) -> None:
-        """Initialize."""
-        super().__init__(coordinator)
-        self.area = area
-        self.data = self.coordinator.data.get(self.area.id)
+#     def __init__(self, coordinator: CoordinatorEntity, area: Area) -> None:
+#         """Initialize."""
+#         super().__init__(coordinator)
+#         self.area = area
+#         self.data = self.coordinator.data.get(self.area.id)
 
-        self.entity_description = LoadSheddingSensorDescription(
-            key=f"{DOMAIN} schedule {area.id}",
-            icon="mdi:calendar",
-            name=f"{DOMAIN} schedule {area.name}",
-            entity_registry_enabled_default=True,
-        )
-        self._attr_unique_id = (
-            f"{self.coordinator.config_entry.entry_id}_sensor_{area.id}"
-        )
-        self.entity_id = f"{DOMAIN}.{DOMAIN}_area_{area.id}"
+#         self.entity_description = LoadSheddingSensorDescription(
+#             key=f"{DOMAIN} schedule {area.id}",
+#             icon="mdi:calendar",
+#             name=f"{DOMAIN} schedule {area.name}",
+#             entity_registry_enabled_default=True,
+#         )
+#         self._attr_unique_id = (
+#             f"{self.coordinator.config_entry.entry_id}_sensor_{area.id}"
+#         )
+#         self.entity_id = f"{DOMAIN}.{DOMAIN}_area_{area.id}"
 
-    async def async_added_to_hass(self) -> None:
-        """Handle entity which will be added."""
-        if restored_data := await self.async_get_last_sensor_data():
-            self._attr_native_value = restored_data.native_value
-        await super().async_added_to_hass()
+#     async def async_added_to_hass(self) -> None:
+#         """Handle entity which will be added."""
+#         if restored_data := await self.async_get_last_sensor_data():
+#             self._attr_native_value = restored_data.native_value
+#         await super().async_added_to_hass()
 
-    @property
-    def name(self) -> str | None:
-        return self.area.name
+#     @property
+#     def name(self) -> str | None:
+#         return self.area.name
 
-    @property
-    def native_value(self) -> StateType:
-        """Return the area state."""
-        if not self.data:
-            return self._attr_native_value
+#     @property
+#     def native_value(self) -> StateType:
+#         """Return the area state."""
+#         if not self.data:
+#             return self._attr_native_value
 
-        events = self.data.get(ATTR_FORECAST, [])
+#         events = self.data.get(ATTR_FORECAST, [])
 
-        if not events:
-            return self._attr_native_value
+#         if not events:
+#             return STATE_OFF
 
-        now = datetime.now(timezone.utc)
+#         now = datetime.now(timezone.utc)
 
-        for event in events:
-            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                continue
+#         for event in events:
+#             if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+#                 continue
 
-            if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
-                self._attr_native_value = cast(StateType, STATE_ON)
-                break
+#             if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
+#                 self._attr_native_value = cast(StateType, STATE_ON)
+#                 break
 
-            if event.get(ATTR_START_TIME) > now:
-                self._attr_native_value = cast(StateType, STATE_OFF)
-                break
+#             if event.get(ATTR_START_TIME) > now:
+#                 self._attr_native_value = cast(StateType, STATE_OFF)
+#                 break
 
-            if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
-                self._attr_native_value = cast(StateType, STATE_OFF)
-                break
+#             if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
+#                 self._attr_native_value = cast(StateType, STATE_OFF)
+#                 break
 
-        return self._attr_native_value
+#         return self._attr_native_value
 
-    @property
-    def extra_state_attributes(self) -> dict[str, list, Any]:
-        """Return the state attributes."""
-        if not hasattr(self, "_attr_extra_state_attributes"):
-            self._attr_extra_state_attributes = {}
+#     @property
+#     def extra_state_attributes(self) -> dict[str, list, Any]:
+#         """Return the state attributes."""
+#         if not hasattr(self, "_attr_extra_state_attributes"):
+#             self._attr_extra_state_attributes = {}
 
-        if not self.data:
-            return self._attr_extra_state_attributes
+#         if not self.data:
+#             return self._attr_extra_state_attributes
 
-        now = datetime.now(timezone.utc)
-        data = dict(self._attr_extra_state_attributes)
-        if events := self.data.get(ATTR_FORECAST, []):
-            data[ATTR_FORECAST] = []
-            for event in events:
-                if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                    continue
+#         now = datetime.now(timezone.utc)
+#         data = dict(self._attr_extra_state_attributes)
+#         if events := self.data.get(ATTR_FORECAST, []):
+#             data[ATTR_FORECAST] = []
+#             for event in events:
+#                 if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+#                     continue
 
-                forecast = {
-                    ATTR_STAGE: event.get(ATTR_STAGE),
-                    ATTR_START_TIME: event.get(ATTR_START_TIME),
-                    ATTR_END_TIME: event.get(ATTR_END_TIME),
-                }
+#                 forecast = {
+#                     ATTR_STAGE: event.get(ATTR_STAGE),
+#                     ATTR_START_TIME: event.get(ATTR_START_TIME),
+#                     ATTR_END_TIME: event.get(ATTR_END_TIME),
+#                 }
 
-                data[ATTR_FORECAST].append(forecast)
+#                 data[ATTR_FORECAST].append(forecast)
 
-        attrs = get_sensor_attrs(data[ATTR_FORECAST])
-        attrs[ATTR_FORECAST] = data[ATTR_FORECAST]
-        attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
-        attrs = clean(attrs)
+#         forecast = []
+#         if ATTR_FORECAST in data:
+#             forecast = data[ATTR_FORECAST]
 
-        self._attr_extra_state_attributes.update(attrs)
-        return self._attr_extra_state_attributes
+#         attrs = get_sensor_attrs(forecast)
+#         attrs[ATTR_FORECAST] = forecast
+#         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
+#         attrs = clean(attrs)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if data := self.coordinator.data:
-            self.data = data.get(self.area.id)
-            self.async_write_ha_state()
+#         self._attr_extra_state_attributes.update(attrs)
+#         return self._attr_extra_state_attributes
+
+#     @callback
+#     def _handle_coordinator_update(self) -> None:
+#         """Handle updated data from the coordinator."""
+#         if data := self.coordinator.data:
+#             self.data = data.get(self.area.id)
+#             self.async_write_ha_state()
 
 
 class LoadSheddingQuotaSensorEntity(

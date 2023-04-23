@@ -43,6 +43,23 @@
   },
   "options": {
     "step": {
+      "init": {
+        "title": "Load Shedding Configuration",
+        "description": "Please select the desired action.",
+        "data": {
+          "add_area": "Add area",
+          "delete_area": "Remove area",
+          "setup_api": "Configure API",
+          "multi_stage_events": "Multi-stage events",
+          "min_event_duration": "Min. event duration (mins)"
+        }
+      },
+      "sepush": {
+        "description": "Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).",
+        "data": {
+          "api_key": "API Key / Token"
+        }
+      },
       "lookup_areas": {
         "description": "Search your area name, e.g. Milnerton, then select your area ID from the results.",
         "data": {
@@ -55,6 +72,16 @@
           "area_id": "Area"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "provider_error": "Unable to reach Provider.  See Logs for details.",
+      "no_results_found": "No results found.  Try searching for a different area with the same schedule as yours or choose a different provider.",
+      "no_provider": "No provider selected.",
+      "sepush_400": "Bad request. Create a issue for the integration and include logs.",
+      "sepush_403": "Invalid API Key / Token",
+      "sepush_429": "Token quota exceeded",
+      "sepush_500": "SePush server unavailable"
     }
   }
 }
