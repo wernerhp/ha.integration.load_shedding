@@ -16,7 +16,7 @@ action:
         {% else %}
           {{ states(trigger.entity_id) }}
         {% endif %}
-    enabled: true
+    enabled: "true"
   - choose:
       - conditions:
           - condition: or
@@ -45,12 +45,12 @@ action:
           - wait_for_trigger:
               - platform: time
                 at: input_datetime.wake
-            continue_on_timeout: false
+            continue_on_timeout: "false"
     default: []
   - service: tts.home_assistant_say
     data:
       entity_id: media_player.assistant_speakers
-      cache: true
+      cache: "true"
       message: |-
         Load Shedding {% if is_state_attr(trigger.entity_id, "stage", 0) %}
           Suspended
@@ -71,5 +71,5 @@ action:
         data:
           message: Load shedding imminent!
           entity_id: media_player.assistant_speakers
-          cache: true
+          cache: "true"
 mode: single
