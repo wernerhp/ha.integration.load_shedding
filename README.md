@@ -8,6 +8,7 @@ A Home Assistant integration to track your load schedding schedule.
 > If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
 
 >  v1.0.0 uses the Eskom SePush API.  Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).  You can also pay to get a higher request limit.
+> 🚨 Read the [EskomSePush API Licence Agreement](https://esp.info/license-agreement).  Do not use more than one API key from the same IP.  Your key will be blocked.
 
 # HACS Install 
 1. Go to HACS Integrations on your Home Assitant instance
