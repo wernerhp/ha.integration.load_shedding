@@ -2,13 +2,19 @@
 
 A Home Assistant integration to track your load schedding schedule.
 
-![img_11.png](img_11.png)
+| ![img_11.png](img_11.png) | ![image](https://github.com/wernerhp/ha.integration.load_shedding/assets/2578772/5bea659f-4f86-4e20-aac0-bb80f8185715) |
+| --- | --- |
+
+
 
 > ℹ️ **_NOTE:_**  Prior to v1.0.0 this integration made use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
 > If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
 
 >  v1.0.0 uses the Eskom SePush API.  Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).  You can also pay to get a higher request limit.
-> 🚨 Read the [EskomSePush API Licence Agreement](https://esp.info/license-agreement).  Do not use more than one API key from the same IP.  Your key will be blocked.
+
+> 🚨 Read the [EskomSePush API Licence Agreement](https://esp.info/license-agreement).
+> 
+> ⚠️ Do not use more than one API key from the same IP.  Your key will be blocked.
 
 # HACS Install 
 1. Go to HACS Integrations on your Home Assitant instance
@@ -112,6 +118,16 @@ I created these cards with the help the following
 ![img_10.png](img_10.png)
 ![img_11.png](img_11.png)
 ![img_12.png](img_12.png)
+</details>
+
+<details>
+  <summary>Card 5 - ESP Status Bar</summary>
+
+Thanks to @ribeirompl for this [contribution](https://github.com/wernerhp/ha.integration.load_shedding/issues/72#issuecomment-1712458448)
+
+[Code](examples/card5.yaml)  
+![image](https://github.com/wernerhp/ha.integration.load_shedding/assets/2578772/4036877b-5e8e-4f1b-b9b7-008cbe70a6a4)
+
 </details>
 
 # Automation Ideas
