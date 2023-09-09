@@ -1,0 +1,194 @@
+type: custom:html-template-card
+ignore_line_breaks: true
+content: >
+  {% set area_sensor = "sensor.load_shedding_area_tshwane_3_garsfonteinext8" %}
+  {% set number_of_days = 2 %}  {% set show_day_borders = false %}
+  {% set timeslots = 48 %}  
+  <style>
+      @media (prefers-color-scheme: light) {
+          {% if show_day_borders %}
+          .day_container {
+              background-color: #fbeff3 !important;
+          }
+          {% endif %}
+
+          .current_time_indicator_text,
+          .current_slot_indicator_text {
+              color: #785551 !important;
+          }
+
+          .current_time_indicator,
+          .current_slot_indicator {
+              background-color: #785551 !important;
+          }
+
+          .slot {
+              background-color: #f5ddd9 !important;
+          }
+      }
+
+      .day_container {
+          {% if show_day_borders %}
+          background-color: #2b2120;
+          border-radius: 0.75rem;
+          {% endif %}
+          padding-top: 0.5rem;
+          padding-bottom: 1.75rem;
+          margin: 0.25rem 0;
+      }
+
+      h3.day_heading,
+      .current_time_indicator_text,
+      .current_slot_indicator_text {
+          font-family: Roboto, Ubuntu, sans-serif;
+          font-weight: 600;
+      }
+
+      h3.day_heading {
+          font-size: 1.0rem;
+          margin: 0 0 0 1rem;
+      }
+
+      .slot_container {
+          display: grid;
+          grid-template-columns: repeat({{ timeslots }}, 1fr);
+          gap: 0.0625rem;
+          width: calc(100% - 2rem);
+          margin: 0 1rem;
+          line-height: 0.9375rem;
+          position: relative;
+      }
+
+      .slot_container .slot:first-of-type {
+          border-top-left-radius: 50%;
+          border-bottom-left-radius: 50%;
+      }
+
+      .slot_container .slot:last-of-type {
+          border-top-right-radius: 50%;
+          border-bottom-right-radius: 50%;
+      }
+
+      .slot {
+          border-radius: 15%;
+          background-color: #534341;
+      }
+
+      .active_slot_stage_1 {
+          background-color: #f6a829 !important;
+      }
+
+      .active_slot_stage_2 {
+          background-color: #f8980d !important;
+      }
+
+      .active_slot_stage_3 {
+          background-color: #e66e0e !important;
+      }
+
+      .active_slot_stage_4 {
+          background-color: #e3493f !important;
+      }
+
+      .active_slot_stage_5 {
+          background-color: #d93e3d !important;
+      }
+
+      .active_slot_stage_6 {
+          background-color: #cf3131 !important;
+      }
+
+      .active_slot_stage_7 {
+          background-color: #b21e1d !important;
+      }
+
+      .active_slot_stage_8 {
+          background-color: black !important;
+      }
+
+      div.active_slot {
+          background-color: black;
+      }
+
+      div.fade_slot {
+          opacity:0.2;
+      }
+
+      .current_time_indicator {
+          width: 0.125rem;
+          position: absolute;
+          height: 120%;
+          top: -10%;
+          border-radius: 15%;
+          transform: translate(-50%, 0);
+          background-color: #e6bdb7;
+      }
+
+      .current_time_indicator_text {
+          position: absolute;
+          bottom: 140%;
+          transform: translate(-50%, 0);
+          color: #e6bdb7;
+      }
+
+      .current_slot_indicator {
+          width: 0.125rem;
+          position: absolute;
+          height: 40%;
+          top: 100%;
+          border-radius: 15%;
+          transform: translate(-50%, 0);
+          background-color: #e6bdb7;
+      }
+
+      .current_slot_indicator_text {
+          position: absolute;
+          top: 150%;
+          transform: translate(-50%, 0);
+          color: #e6bdb7;
+      }
+  </style>  {% set area_schedule = state_attr(area_sensor, "forecast") %}  {%
+  for day_offset_idx in range(number_of_days) %}
+      {% set today_datetime_midnight = now().replace(hour=0,minute=0,second=0,microsecond=0) + timedelta(days=day_offset_idx) %}
+      <div class="day_container">
+          <h3 class="day_heading"
+              style="{% if day_offset_idx == 0 %} margin-bottom: 1.5rem;
+                  {% else %} margin-bottom: 0.5rem;
+                  {% endif %}">{{ today_datetime_midnight.strftime("%A, %B %-d") }}</h3>
+          <div class="slot_container">
+              {% set ns = namespace(active_class_name="", last_slot_was_active=false, current_slot_was_activated=false) %}
+              {% for half_hour_time_slot_idx in range(timeslots) %}
+                  {% set half_hour_time_slot = today_datetime_midnight + timedelta(minutes=30*half_hour_time_slot_idx) %}
+                  {% set ns.active_class_name = "" %}
+                  {% set ns.current_slot_was_activated = false %}
+                  {% for loadshedding in area_schedule %}
+                      {% if not ns.current_slot_was_activated %}
+                          {% if loadshedding["start_time"] <= half_hour_time_slot < loadshedding["end_time"] %}
+                              {% if not ns.last_slot_was_active %}
+                                  {% set percentage_of_region = (half_hour_time_slot_idx/timeslots)*100 %}
+                                  <span class="current_slot_indicator" style="left:{{ percentage_of_region }}%">&nbsp;</span>
+                                  <span class="current_slot_indicator_text" style="left:{{ percentage_of_region }}%;
+                                      {% if half_hour_time_slot.hour == 0 %}transform: none;{% endif %}">{{ half_hour_time_slot.strftime("%H:%M") }}</span>
+                              {% endif %}
+                              {% set ns.current_slot_was_activated = true %}
+                              {% set ns.last_slot_was_active = true %}
+                              {% set ns.active_class_name = "active_slot active_slot_" + loadshedding['stage']|lower|replace(' ','_') %}
+                          {% endif %}
+                      {% endif %}
+                  {% endfor %}
+                  {% if not ns.current_slot_was_activated %}
+                      {% set ns.last_slot_was_active = false %}
+                  {% endif %}
+                  <div class="slot {% if now() > half_hour_time_slot + timedelta(minutes=30) %}fade_slot{% endif %} {{ ns.active_class_name }}">&nbsp;</div>
+              {% endfor %}
+              {% if day_offset_idx == 0 %}
+                  {% set current_time_indicator_progress = now().hour*2 + now().minute/30 %}
+                  {% set percentage_of_region = (current_time_indicator_progress/timeslots)*100 %}
+                  <span class="current_time_indicator"
+                      style="left:{{ percentage_of_region }}%">&nbsp;</span>
+                  <span class="current_time_indicator_text"
+                      style="left:{{ percentage_of_region }}%">Now</span>
+              {% endif %}
+          </div>
+      </div>
+  {% endfor %}
