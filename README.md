@@ -125,6 +125,8 @@ I created these cards with the help the following
 
 Thanks to @ribeirompl for this [contribution](https://github.com/wernerhp/ha.integration.load_shedding/issues/72#issuecomment-1712458448)
 
+Requires [Lovelace HTML Jinja2 Template card](https://github.com/PiotrMachowski/Home-Assistant-Lovelace-HTML-Jinja2-Template-card)
+
 [Code](examples/card5.yaml)  
 ![image](https://github.com/wernerhp/ha.integration.load_shedding/assets/2578772/4036877b-5e8e-4f1b-b9b7-008cbe70a6a4)
 
