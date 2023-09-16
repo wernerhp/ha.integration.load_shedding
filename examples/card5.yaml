@@ -2,8 +2,10 @@ type: custom:html-template-card
 ignore_line_breaks: true
 content: >
   {% set area_sensor = "sensor.load_shedding_area_tshwane_3_garsfonteinext8" %}
-  {% set number_of_days = 2 %}  {% set show_day_borders = false %}
-  {% set timeslots = 48 %}  
+  {% set number_of_days = 2 %}
+  {% set show_day_borders = false %}
+  {% set show_end_times = false %}
+  {% set timeslots = 48 %}
   <style>
       @media (prefers-color-scheme: light) {
           {% if show_day_borders %}
@@ -13,12 +15,14 @@ content: >
           {% endif %}
 
           .current_time_indicator_text,
-          .current_slot_indicator_text {
+          .current_slot_indicator_start_text,
+          .current_slot_indicator_end_text {
               color: #785551 !important;
           }
 
           .current_time_indicator,
-          .current_slot_indicator {
+          .current_slot_indicator_start,
+          .current_slot_indicator_end {
               background-color: #785551 !important;
           }
 
@@ -39,7 +43,8 @@ content: >
 
       h3.day_heading,
       .current_time_indicator_text,
-      .current_slot_indicator_text {
+      .current_slot_indicator_start_text,
+      .current_slot_indicator_end_text {
           font-family: Roboto, Ubuntu, sans-serif;
           font-weight: 600;
       }
@@ -131,7 +136,7 @@ content: >
           color: #e6bdb7;
       }
 
-      .current_slot_indicator {
+      .current_slot_indicator_start {
           width: 0.125rem;
           position: absolute;
           height: 40%;
@@ -141,18 +146,36 @@ content: >
           background-color: #e6bdb7;
       }
 
-      .current_slot_indicator_text {
+      .current_slot_indicator_start_text {
           position: absolute;
           top: 150%;
           transform: translate(-50%, 0);
           color: #e6bdb7;
       }
-  </style>  {% set area_schedule = state_attr(area_sensor, "forecast") %}  {%
-  for day_offset_idx in range(number_of_days) %}
+
+      .current_slot_indicator_end {
+          width: 0.125rem;
+          position: absolute;
+          height: 40%;
+          bottom: 100%;
+          border-radius: 15%;
+          transform: translate(-50%, 0);
+          background-color: #e6bdb7;
+      }
+
+      .current_slot_indicator_end_text {
+          position: absolute;
+          bottom: 150%;
+          transform: translate(-50%, 0);
+          color: #e6bdb7;
+      }
+  </style>
+  {% set area_schedule = state_attr(area_sensor, "forecast") %}
+  {% for day_offset_idx in range(number_of_days) %}
       {% set today_datetime_midnight = now().replace(hour=0,minute=0,second=0,microsecond=0) + timedelta(days=day_offset_idx) %}
       <div class="day_container">
           <h3 class="day_heading"
-              style="{% if day_offset_idx == 0 %} margin-bottom: 1.5rem;
+              style="{% if day_offset_idx == 0 or show_end_times %} margin-bottom: 1.5rem;
                   {% else %} margin-bottom: 0.5rem;
                   {% endif %}">{{ today_datetime_midnight.strftime("%A, %B %-d") }}</h3>
           <div class="slot_container">
@@ -166,9 +189,9 @@ content: >
                           {% if loadshedding["start_time"] <= half_hour_time_slot < loadshedding["end_time"] %}
                               {% if not ns.last_slot_was_active %}
                                   {% set percentage_of_region = (half_hour_time_slot_idx/timeslots)*100 %}
-                                  <span class="current_slot_indicator" style="left:{{ percentage_of_region }}%">&nbsp;</span>
-                                  <span class="current_slot_indicator_text" style="left:{{ percentage_of_region }}%;
-                                      {% if half_hour_time_slot.hour == 0 %}transform: none;{% endif %}">{{ half_hour_time_slot.strftime("%H:%M") }}</span>
+                                  <span class="current_slot_indicator_start" style="left:{{ percentage_of_region }}%">&nbsp;</span>
+                                  <span class="current_slot_indicator_start_text" style="left:{{ percentage_of_region }}%;
+                                              {% if half_hour_time_slot.hour == 0 %}transform: none;{% elif half_hour_time_slot.hour == 23 %}transform: translate(-100%,0);{% endif %}">{{ half_hour_time_slot.strftime("%H:%M") }}</span>
                               {% endif %}
                               {% set ns.current_slot_was_activated = true %}
                               {% set ns.last_slot_was_active = true %}
@@ -177,6 +200,14 @@ content: >
                       {% endif %}
                   {% endfor %}
                   {% if not ns.current_slot_was_activated %}
+                      {% if show_end_times and ns.last_slot_was_active %}
+                          {% set percentage_of_region = (half_hour_time_slot_idx/timeslots)*100 %}
+                          <span class="current_slot_indicator_end"
+                              style="left:{{ percentage_of_region }}%">&nbsp;</span>
+                          <span class="current_slot_indicator_end_text"
+                              style="left:{{ percentage_of_region }}%;
+                                      {% if half_hour_time_slot.hour == 0 %}transform: none;{% elif half_hour_time_slot.hour == 23 %}transform: translate(-100%,0);{% endif %}">{{ half_hour_time_slot.strftime("%H:%M") }}</span>
+                      {% endif %}
                       {% set ns.last_slot_was_active = false %}
                   {% endif %}
                   <div class="slot {% if now() > half_hour_time_slot + timedelta(minutes=30) %}fade_slot{% endif %} {{ ns.active_class_name }}">&nbsp;</div>
@@ -186,8 +217,10 @@ content: >
                   {% set percentage_of_region = (current_time_indicator_progress/timeslots)*100 %}
                   <span class="current_time_indicator"
                       style="left:{{ percentage_of_region }}%">&nbsp;</span>
-                  <span class="current_time_indicator_text"
-                      style="left:{{ percentage_of_region }}%">Now</span>
+                  {% if not show_end_times %}
+                    <span class="current_time_indicator_text"
+                        style="left:{{ percentage_of_region }}%">Now</span>
+                  {% endif %}
               {% endif %}
           </div>
       </div>
