@@ -171,6 +171,7 @@ content: >
       }
   </style>
   {% set area_schedule = state_attr(area_sensor, "forecast") %}
+  {% if area_schedule is none %}{% set area_schedule = [] %}{% endif %}
   {% for day_offset_idx in range(number_of_days) %}
       {% set today_datetime_midnight = now().replace(hour=0,minute=0,second=0,microsecond=0) + timedelta(days=day_offset_idx) %}
       <div class="day_container">
