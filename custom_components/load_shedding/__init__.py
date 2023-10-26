@@ -132,7 +132,7 @@ async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> boo
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Migrate old entry."""
-    _LOGGER.debug("Migrating from version %s", config_entry.version)
+    _LOGGER.info("Migrating from version %s", config_entry.version)
 
     if config_entry.version == 3:
         old_data = {**config_entry.data}
@@ -168,6 +168,8 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         diff = 0
         if self.last_update is not None:
             diff = (now - self.last_update).seconds
+            _LOGGER.debug("Stage now: %s, last_update: %s, diff: %s, ", now, self.last_update, diff)
+            
 
         if 0 < diff < STAGE_UPDATE_INTERVAL:
             return self.data
@@ -189,6 +191,11 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             esp = await self.hass.async_add_executor_job(self.sepush.status)
         except SePushError as err:
+            self.hass.components.persistent_notification.async_create(
+                f"SePush Error: {err}", 
+                title='Load Shedding',
+                notification_id='SePushError'
+            )
             raise UpdateFailed(err) from err
         else:
             data = {}
@@ -272,6 +279,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.last_update is not None:
             diff = (now - self.last_update).seconds
 
+        _LOGGER.info("Area now: %s, last_update: %s, diff: %s, ", now, self.last_update, diff)
         if 0 < diff < AREA_UPDATE_INTERVAL:
             await self.async_area_forecast()
             return self.data
@@ -281,9 +289,13 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except UpdateFailed as err:
             _LOGGER.error("Unable to get area schedule: %s", err, exc_info=True)
             self.data = {}
+        except Exception as err:
+            _LOGGER.error("Unable to get area schedule: %s", err, exc_info=True)
+            self.data = {} 
         else:
             self.data = area
             self.last_update = now
+            _LOGGER.info("Area updated: last_update: %s, ", self.last_update)
 
         await self.async_area_forecast()
         return self.data
@@ -296,6 +308,11 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 esp = await self.hass.async_add_executor_job(self.sepush.area, area.id)
             except SePushError as err:
+                self.hass.components.persistent_notification.async_create(
+                    f"SePush Error: {err}", 
+                    title='Load Shedding',
+                    notification_id='SePushError'
+                )
                 raise UpdateFailed(err) from err
 
             # Get events for area
