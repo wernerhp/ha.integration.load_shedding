@@ -7,8 +7,8 @@ cards:
 
       {% set area_sensor = "sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape" %}
 
-
-
+      {% if states(stage_sensor) != "unknown" and states(area_sensor) != "unknown" %}
+      
       {% set start_time = state_attr(stage_sensor, "start_time") %}  {% set
       end_time = state_attr(stage_sensor, "end_time") %}
 
@@ -34,7 +34,8 @@ cards:
           {% endif %}
         {% endif %}
       {% endif %}
-
+      
+      {% endif %}
 
       {% set area_forecast = state_attr(area_sensor, "forecast" )%}
 
