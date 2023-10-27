@@ -33,7 +33,7 @@ cards:
         {% set end_time = area_schedule[0].end_time %}
 
         {% if is_state(area_sensor, "off") %}
-          {% set starts_in = timedelta(minutes=state_attr(area_sensor, "starts_in")).total_seconds() | int // 60 %}
+          {% set starts_in = timedelta(minutes=state_attr(area_sensor, "starts_in")).total_seconds() | int(default=0) // 60 %}
           {% set mins = starts_in % 60 %}
           {% set hrs = starts_in // 60 % 24 %}
           {% set days = starts_in // 1440 %}
@@ -47,7 +47,7 @@ cards:
             <ha-alert alert-type="error">{{ alert }}</ha-alert>
           {% endif %}
         {% else %}
-          {% set ends_in = timedelta(minutes=state_attr(area_sensor, "ends_in")).total_seconds() | int // 60 %}
+          {% set ends_in = timedelta(minutes=state_attr(area_sensor, "ends_in")).total_seconds() | int(default=0) // 60 %}
             {% set mins = ends_in % 60 %}
             {% set hrs = ends_in // 60 % 24 %}
             {% set days = ends_in // 1440 %}
@@ -59,7 +59,7 @@ cards:
         {% set stage = state_attr(stage_sensor, "next_stage") %}
         {% set start_time = state_attr(stage_sensor, "next_start_time") %}
         {% set end_time = state_attr(stage_sensor, "next_end_time") %}
-        {% set starts_in = timedelta(minutes=state_attr(stage_sensor, "starts_in")).total_seconds() | int // 60 %}
+        {% set starts_in = timedelta(minutes=state_attr(stage_sensor, "starts_in")).total_seconds() | int(default=0) // 60 %}
         {% set mins = starts_in % 60 %}
         {% set hrs = starts_in // 60 % 24 %}
         {% set days = starts_in // 1440 %}
