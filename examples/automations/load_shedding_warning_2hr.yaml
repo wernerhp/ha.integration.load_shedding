@@ -1,14 +1,8 @@
 alias: Load Shedding (Warning) (2hr)
 description: ""
 trigger:
-  - platform: template
-    value_template: >-
-      {{
-      timedelta(minutes=(state_attr("sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape",
-      "starts_in"))) == timedelta(minutes=15) }}
-    enabled: false
   - platform: numeric_state
-    entity_id: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
+    entity_id: sensor.load_shedding_area_tshwane_3_garsfonteinext8
     attribute: starts_in
     below: "120"
 condition:
@@ -21,19 +15,15 @@ condition:
             above: "0"
         enabled: true
       - condition: time
-        after: input_datetime.alarm
+        after: input_datetime.wake
         before: input_datetime.sleep
 action:
-  - service: telegram_bot.send_message
-    data:
-      message: Load Shedding starts in 15 minutes.
-      title: Load Shedding
-    enabled: false
   - service: media_player.volume_set
     data:
-      volume_level: 0.7
+      volume_level: 0.75
     target:
       entity_id: media_player.assistant_speakers
+      device_id: 4b0376fc9b29b09797298badeea28d72
   - service: tts.home_assistant_say
     data:
       entity_id: media_player.assistant_speakers

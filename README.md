@@ -2,29 +2,23 @@
 
 A Home Assistant integration to track your load schedding schedule.
 
-| ![img_11.png](img_11.png) | ![image](https://github.com/wernerhp/ha.integration.load_shedding/assets/2578772/5bea659f-4f86-4e20-aac0-bb80f8185715) |
-| --- | --- |
+<img src="img/preview.png" width="auto" height="auto"/>
 
 
-
-> ℹ️ **_NOTE:_**  Prior to v1.0.0 this integration made use of [this Python library](https://gitlab.com/wernerhp/load-shedding) which only supports schedules for Eskom Direct customers.  If you can find your schedule on https://loadshedding.eskom.co.za/ then you'll have schedule info available.  
-> If you are not an Eskom Direct customer, then a work-around is to find an Eskom Direct schedule which matches yours and use that instead.  There are no immediate plans to add other municipalities, but Merge Requests on [the library](https://gitlab.com/wernerhp/load-shedding) to expand support are welcome.
-
->  v1.0.0 uses the Eskom SePush API.  Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).  You can also pay to get a higher request limit.
-
-> 🚨 Read the [EskomSePush API Licence Agreement](https://esp.info/license-agreement).
-> 
-> ⚠️ Do not use more than one API key from the same IP.  Your key will be blocked.
+>💡This integration uses the Eskom SePush API.  
+>🚨Read the [EskomSePush API Licence Agreement](https://esp.info/license-agreement).  
+>🔑Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).  You can pay for a higher limit.  
+>⚠️Do not use more than one API key from the same IP.  Your key will be blocked.
 
 # HACS Install 
-1. Go to HACS Integrations on your Home Assitant instance
-2. Select "+ Explore & Download Repositories" and search for "Load Shedding"
-3. Select "Load Shedding" and "Download this repository with HACS"
+1. Go to **HACS Integrations** on your Home Assitant instance
+2. Select "+ **Explore & Download Repositories**" and search for "**Load Shedding**"
+3. Select **Load Shedding: A Home assistant integration to track your load shedding schedule.** and **Download this repository with HACS**
 ![image](https://user-images.githubusercontent.com/2578772/167293308-d3ef2131-bc71-431e-a1ff-6e02f02af000.png)
-4. Once downloaded, click the "My Integrations" button to configure the integration.  
+4. Once downloaded, click the **My Integrations** button to configure the integration.  
 [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=load_shedding)
 5. Setup cards and automations
-6. [Support](https://github.com/wernerhp/ha.integration.load_shedding/blob/master/README.md#support)
+6. Please [support my work](https://github.com/wernerhp/ha.integration.load_shedding/blob/master/README.md#support)
 
 # Support 
 If you find this integration useful, please consider supporting my work by [buying me a coffee](https://www.buymeacoffee.com/wernerhp) or making a donation in the form of Bitcoin.
@@ -37,7 +31,7 @@ Sign-up for a free Luno wallet using [this invite link](http://www.luno.com/invi
 
 ### Bitcoin
 `3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE`  
-<img width="200" alt="Bitcoin address: 3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE" src="img_9.png">
+<img width="200" alt="Bitcoin address: 3EGnQKKbF6AijqW9unyBuW8YeEscY5wMSE" src="img/img_9.png">
 
 
 # Manual Install
@@ -60,7 +54,7 @@ Sign-up for a free Luno wallet using [this invite link](http://www.luno.com/invi
 <details>
 <summary>Screenshot</summary>
   
-![img_7.png](img_7.png)
+<img src="img/img_7.png" width="auto" height="auto"/>
   </details>
 
 6. If you're coming from a previous version of this integration, you may need to delete the `.json` files in `/config/.cache`.
@@ -78,74 +72,59 @@ i.e When load shedding is suspended, it will show **No Load Shedding**.  When St
 <details>
   <summary>Screenshot</summary>
 
-| ![img_5.png](img_5.png) | ![img_4.png](img_4.png) | 
+| <img src="img/img_5.png" width="auto" height="auto"/> | <img src="img/img_4.png" width="auto" height="auto"/> | 
 
-![img_6.png](img_6.png)
+<img src="img/img_6.png" width="auto" height="auto"/>
 
   </details>
 
 # Cards
-I created these cards with the help the following
-- [template-entity-row](https://github.com/thomasloven/lovelace-template-entity-row) 
-- [🍄 Mushroom](https://github.com/piitaya/lovelace-mushroom)
+
+## Mushroom Chips
+- [Mushroom](https://github.com/piitaya/lovelace-mushroom)
+
+- [Code](examples/dashboards/mushroom_chips.yaml)  
+
+<img src="img/mushroom_chips.png" width="auto" height="auto"/>
+
+
+## Status Alert
+- [Markdown Card](https://www.home-assistant.io/dashboards/markdown/)
+
+- [Code](examples/dashboards/status_alert.yaml)  
+
+<img src="img/status_alert.png" width="auto" height="auto"/>
+
+## Calendar
+
 - [Atomic Calendar Revive](https://github.com/totaldebug/atomic-calendar-revive)
 
-<details>
-  <summary>Card 1</summary>
+- [Code](examples/dashboards/calendar.yaml)
 
-[Code](examples/card1.yaml)  
-![img.png](img.png)
-</details>
+<img src="img/calendar.png" width="auto" height="auto"/>
 
-<details>
-  <summary>Card 2</summary>
-
-[Code](examples/card2.yaml)  
-![img_1.png](img_1.png)
-</details>
-
-<details>
-  <summary>Card 3</summary>
-
-[Code](examples/card3.yaml)  
-![img_2.png](img_2.png)  
-</details>
-
-<details>
-  <summary>Card 4 - Mushroom Chips and Atomic Calendar Revive</summary>
-
-[Code](examples/card4.yaml)  
-![img_10.png](img_10.png)
-![img_11.png](img_11.png)
-![img_12.png](img_12.png)
-</details>
-
-<details>
-  <summary>Card 5 - ESP Status Bar</summary>
-
+## ESP Status Bar
 Thanks to @ribeirompl for this [contribution](https://github.com/wernerhp/ha.integration.load_shedding/issues/72#issuecomment-1712458448)
 
-Requires [Lovelace HTML Jinja2 Template card](https://github.com/PiotrMachowski/Home-Assistant-Lovelace-HTML-Jinja2-Template-card)
+- [Lovelace HTML Jinja2 Template card](https://github.com/PiotrMachowski/Home-Assistant-Lovelace-HTML-Jinja2-Template-card)
 
-[Code](examples/card5.yaml)  
-![image](https://github.com/wernerhp/ha.integration.load_shedding/assets/2578772/4036877b-5e8e-4f1b-b9b7-008cbe70a6a4)
+- [Code](examples/dashboards/esp_status_bar.yaml)  
 
-</details>
+<img src="img/esp_status_bar.png" width="auto" height="auto"/>
 
 # Automation Ideas
 These are just some automations I've got set up.  They are not perfect and will require some tweaking on your end.    
 Replace `sensor.load_shedding_south_africa_stage`, `sensor.load_shedding_milnerton_14` and other `entity_id` with your own.
 
-### Announce Load Shedding stage changes on speakers and push notifications.
-- [Load Shedding (Stage)](examples/automation1.yaml)
-  
-### 15 minutes warning on speaker and telegram before load shedding starts.
-- [Load Shedding (Warning)](examples/automation2.yaml)
+## Load Shedding Stage
+Announce Load Shedding stage changes on speakers and push notifications.
+- [Load Shedding (Stage)](examples/automations/load_shedding_stage.yaml)
 
-### 2 hour warning on speaker
-- [Load Shedding (Warning) (2hr)](examples/automation5.yaml)
+## Load Shedding Start/End
+Do stuff when load shedding starts, e.g. update your slack status, turn off lights, etc.
+- [Load Shedding (Start/End)](examples/automations/load_shedding_start_end.yaml)
 
-### Update your Slack status
+### Slack Status
 
 Setup a [REST Command](https://www.home-assistant.io/integrations/rest_command/) and two automations to set your Slack status when Load Shedding starts and ends.
 <details>
@@ -168,5 +147,18 @@ rest_command:
       content_type: "application/json; charset=utf-8"
       verify_ssl: true
 ```
-- [Load Shedding (Start/End)](examples/automation3.yaml)
+
 </details>
+
+
+## Load Shedding Warning (15 min)
+15 minutes warning on speaker and telegram before load shedding starts.
+- [Load Shedding (Warning)](examples/automations/load_shedding_warning.yaml)
+
+## Load Shedding Warning (2 hr)
+2 hour warning on smart speaker
+- [Load Shedding (Warning) (2hr)](examples/automations/load_shedding_warning_2hr.yaml)
+
+## Load Shedding Reload
+Reload the integration every night.  This is a workaround for Issue #70/#71
+- [Load Shedding Reload](examples/automations/load_shedding_reload.yaml)

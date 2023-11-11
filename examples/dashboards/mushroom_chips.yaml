@@ -1,0 +1,13 @@
+type: custom:mushroom-chips-card
+chips:
+  - type: template
+    content: '{{state_attr(entity, "count")}}/{{state_attr(entity, "limit")}}'
+    entity: sensor.load_shedding_sepush_api_quota
+    icon: mdi:api
+  - type: entity
+    entity: sensor.load_shedding_stage_eskom
+  - type: entity
+    entity: sensor.load_shedding_area_tshwane_3_garsfonteinext8
+    hold_action:
+      action: more-info
+alignment: justify

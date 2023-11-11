@@ -1,0 +1,88 @@
+alias: Load Shedding (Warning)
+description: ""
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.load_shedding_area_tshwane_3_garsfonteinext8
+    attribute: starts_in
+    below: "15"
+condition:
+  - condition: and
+    conditions:
+      - condition: numeric_state
+        entity_id: sensor.load_shedding_stage_eskom
+        attribute: stage
+        above: "0"
+      - condition: time
+        after: input_datetime.wake
+        before: input_datetime.sleep
+action:
+  - service: telegram_bot.send_message
+    data:
+      message: Load Shedding starts in 15 minutes.
+      title: Load Shedding
+    enabled: false
+  - service: media_player.volume_set
+    data:
+      volume_level: 0.7
+    target:
+      entity_id: media_player.assistant_speakers
+  - service: tts.home_assistant_say
+    data:
+      entity_id: media_player.assistant_speakers
+      message: Load Shedding starts in 15 minutes.
+      cache: true
+  - service: rest_command.dell_alert
+    data: {}
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 5
+      milliseconds: 0
+  - service: rest_command.dell_off
+    data: {}
+  - service: rest_command.slack_status
+    data:
+      emoji: ":gopher-coffee:"
+      status: "\"Grabbing coffee before it's too late...\""
+    enabled: true
+  - service: notify.mobile_app_macbook_pro
+    data:
+      message: Load Shedding starts in 15 minutes.
+  - service: notify.notify
+    data:
+      message: TTS
+      title: Load Shedding
+      data:
+        ttl: 0
+        priority: high
+        media_stream: alarm_stream
+        tts_text: Load Shedding starts in 15 minutes.
+    enabled: false
+  - service: notify.notify
+    data:
+      message: Load Shedding starts in 15 minutes.
+      title: Load Shedding
+      data:
+        notification_icon: mdi:lightning-bolt-outline
+        timeout: 900
+        chronometer: true
+        when: >-
+          {{ (now() + timedelta( minutes = 15 )) | as_timestamp(default=0.0) |
+          int(default=0.0) }}
+        ttl: 0
+        priority: high
+        color: red
+        actions:
+          - action: URI
+            title: Forecast
+            uri: homeassistant://navigate/wall-panel/load-shedding
+  - delay:
+      hours: 0
+      minutes: 10
+      seconds: 0
+      milliseconds: 0
+    enabled: false
+  - service: shell_command.turn_off_um690_ubuntu
+    data: {}
+    enabled: false
+mode: single

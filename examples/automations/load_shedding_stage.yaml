@@ -5,9 +5,15 @@ trigger:
     entity_id:
       - sensor.load_shedding_stage_eskom
     attribute: stage
-condition: []
+condition:
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: sensor.load_shedding_stage_eskom
+        state: unavailable
+    alias: Not Unavailable
 action:
-  - service: notify.mobile_app_nokia_8_sirocco
+  - service: notify.mobile_app_all
     data:
       title: Load Shedding
       message: |-
@@ -17,6 +23,7 @@ action:
           {{ states(trigger.entity_id) }}
         {% endif %}
     enabled: true
+    alias: Notify
   - choose:
       - conditions:
           - condition: or
@@ -47,6 +54,7 @@ action:
                 at: input_datetime.wake
             continue_on_timeout: false
     default: []
+    alias: Defer
   - service: tts.home_assistant_say
     data:
       entity_id: media_player.assistant_speakers
@@ -57,6 +65,7 @@ action:
         {% else %}
           {{ states(trigger.entity_id) }}
         {% endif %}
+    alias: Announce
   - delay:
       hours: 0
       minutes: 0
@@ -64,7 +73,7 @@ action:
       milliseconds: 0
   - if:
       - condition: state
-        entity_id: sensor.load_shedding_area_eskde_14_milnertoncityofcapetownwesterncape
+        entity_id: sensor.load_shedding_area_tshwane_3_garsfonteinext8
         state: "on"
     then:
       - service: tts.home_assistant_say
@@ -72,4 +81,6 @@ action:
           message: Load shedding imminent!
           entity_id: media_player.assistant_speakers
           cache: true
-mode: single
+        alias: Announce
+    alias: Announce Imminent
+mode: restart

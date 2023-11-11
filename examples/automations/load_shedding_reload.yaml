@@ -1,0 +1,11 @@
+alias: Load Shedding Reload
+description: "Reloads the integration every night to work around Issue #70/#71"
+trigger:
+  - platform: time
+    at: "00:00:00"
+condition: []
+action:
+  - service: homeassistant.reload_config_entry
+    data:
+      entry_id: ee9d0703259463a110ef7b96a8c8c773
+mode: single

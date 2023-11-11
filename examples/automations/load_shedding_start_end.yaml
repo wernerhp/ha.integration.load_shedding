@@ -1,0 +1,115 @@
+alias: Load Shedding (Start/End)
+description: ""
+trigger:
+  - platform: state
+    entity_id:
+      - sensor.load_shedding_area_tshwane_3_garsfonteinext8
+    to: "on"
+    from: "off"
+condition:
+  - condition: numeric_state
+    entity_id: sensor.load_shedding_stage_eskom
+    attribute: stage
+    above: "0"
+action:
+  - service: scene.create
+    data:
+      scene_id: slack_status_backup
+      snapshot_entities:
+        - input_text.slack_status_emoji
+        - input_text.slack_status_text
+  - service: input_text.set_value
+    data:
+      value: ":loadsheddingtransparent:"
+    target:
+      entity_id: input_text.slack_status_emoji
+  - service: input_text.set_value
+    data:
+      value: >-
+        Load Shedding until {{    
+        (state_attr('sensor.load_shedding_area_tshwane_3_garsfonteinext8','end_time')    
+        | as_datetime | as_local).strftime('%H:%M (%Z)') }}
+    target:
+      entity_id: input_text.slack_status_text
+  - if:
+      - condition: time
+        after: "17:00:00"
+        weekday:
+          - sat
+          - fri
+          - thu
+          - wed
+          - tue
+          - mon
+          - sun
+    then:
+      - service: light.turn_on
+        data:
+          color_temp: 500
+          brightness_pct: 1
+        target:
+          entity_id: light.all_lights
+      - service: light.turn_off
+        data: {}
+        target:
+          entity_id: light.all_lights
+    enabled: false
+  - delay: >-
+      {{ state_attr('sensor.load_shedding_area_tshwane_3_garsfonteinext8',
+      'ends_in') | multiply(60) | int(default=0.0) }}
+  - service: scene.turn_on
+    target:
+      entity_id: scene.slack_status_backup
+    data: {}
+  - service: rest_command.slack_status
+    data:
+      emoji: "{{ states.input_text.slack_status_emoji.state }}"
+      status: "{{ states.input_text.slack_status_text.state }}"
+    enabled: true
+  - service: rest_command.slack_status_zatech
+    data:
+      emoji: ":loadsheddingtransparent:"
+      status: >-
+        Load Shedding until {{
+        (state_attr('sensor.load_shedding_area_tshwane_3_garsfonteinext8','end_time')
+        | as_datetime | as_local).strftime('%H:%M (%Z)') }}
+      status_expiration: >-
+        {{
+        state_attr('sensor.load_shedding_area_tshwane_3_garsfonteinext8','end_time')
+        | as_timestamp(default=0.0)| int(default=0.0) }}
+    enabled: true
+  - if:
+      - condition: state
+        entity_id: group.family
+        state: home
+      - condition: time
+        after: "08:00:00"
+        before: "17:00:00"
+    then:
+      - service: light.turn_on
+        data:
+          transition: 5
+          kelvin: 5000
+          brightness_pct: 75
+        target:
+          entity_id: light.study_lights
+    enabled: false
+  - if:
+      - condition: state
+        entity_id: sensor.sun_stage
+        state: Night
+    then:
+      - service: light.turn_on
+        data:
+          brightness_pct: 2
+        target:
+          area_id: 42ace1a6ae2940f481359957243acb92
+      - service: homeassistant.turn_off
+        data: {}
+        target:
+          entity_id:
+            - input_boolean.bedroom_motion_lights
+            - input_boolean.bedroom_routine
+            - light.bed_lamps
+    enabled: false
+mode: single
