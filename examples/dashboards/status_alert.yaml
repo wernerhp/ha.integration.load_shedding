@@ -18,7 +18,7 @@ content: >-
   {%- endif -%}
 
   {%- if is_state(area_sensor, "off") and starts_in and next_start and next_end -%}
-    {%- set next_in = starts_in -%}
+    {%- set next_in = starts_in if starts_in else 0 -%}
     {%- if next_start == 0 or next_end == 0 -%}
       {%- set next_time = as_timestamp(next_start, default=0.0) -%}
       {%- set alert = "Stage {stage}".format(stage=next_stage) + " starts in {d}d {h}h {m}m ({next})" -%}
@@ -38,7 +38,7 @@ content: >-
     {% endif %}
   {%- elif is_state(area_sensor, "on") and ends_in -%}
     {%- set next_time = as_timestamp(next_end, default=0.0) -%}
-    {%- set next_in = ends_in -%}
+    {%- set next_in = ends_in if ends_in else 0 -%}
     {%- set alert = "Load Shedding ends in {d}d {h}h {m}m ({next})" -%}
     {%- set alert_type = "error" -%}
   {%- endif -%}
