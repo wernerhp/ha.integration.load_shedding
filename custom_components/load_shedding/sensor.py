@@ -133,7 +133,7 @@ class LoadSheddingStageSensorEntity(
 
         planned = self.data.get(ATTR_PLANNED, [])
         if not planned:
-            return self._attr_native_value
+            return Stage.NO_LOAD_SHEDDING
 
         stage = planned[0].get(ATTR_STAGE, Stage.UNKNOWN)
         if stage in [Stage.UNKNOWN]:
