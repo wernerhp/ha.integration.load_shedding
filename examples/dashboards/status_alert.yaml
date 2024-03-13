@@ -1,34 +1,36 @@
 type: markdown
 content: >-
   {%- set stage_sensor = "sensor.load_shedding_stage_eskom" -%}
-  {%- set area_sensor = "sensor.load_shedding_area_tshwane_3_garsfonteinext8d" -%}
+  {%- set area_sensor = "sensor.load_shedding_area_tshwane_3_garsfonteinext8" -%}
+
   {%- set stage = state_attr(stage_sensor, "stage") or 0 -%}
   {%- set next_stage = state_attr(stage_sensor, "next_stage") or 0 -%}
   {%- set next_start = state_attr(stage_sensor, "next_start_time") or 0 -%}
   {%- set next_end = state_attr(stage_sensor, "next_end_time") or 0 -%}
+  {%- set next_in = 0 -%}
+  {%- set next_time = 0 -%}
   {%- set alert = states(stage_sensor) or 0 -%}
   {%- set alert_type = "success" -%}
-  {% set area_forecast = state_attr(area_sensor, "forecast") or 0 -%}
+
+  {% set area_forecast = state_attr(area_sensor, "forecast") or [] -%}
   {%- set starts_in = state_attr(area_sensor, "starts_in") or 0 -%}
   {%- set ends_in = state_attr(area_sensor, "ends_in") or 0 -%}
 
   {%- if area_forecast -%}
-    {%- set next_start = area_forecast[0].start_time -%}
-    {%- set next_end = area_forecast[0].end_time -%}
+    {%- set next_start = area_forecast[0].start_time or 0 -%}
+    {%- set next_end = area_forecast[0].end_time or 0 -%}
   {%- endif -%}
-
-  {%- set next_in = 0 -%}
   {%- if is_state(area_sensor, "off") and starts_in and next_start and next_end -%}
     {%- set next_in = starts_in if starts_in else 0 -%}
     {%- if next_start == 0 or next_end == 0 -%}
       {%- set next_time = as_timestamp(next_start, default=0.0) -%}
-      {%- set alert = "Stage {stage}".format(stage=next_stage) + " starts in {d}d {h}h {m}m ({next})" -%}
+      {%- set alert = "Stage {stage}".format(stage=next_stage) + " starts in {countdown} ({next})" -%}
     {%- elif not stage and starts_in > 1440 -%}
       {%- set next_time = as_timestamp(next_start, default=0.0) -%}
       {%- set alert = "No Load Shedding" -%}
     {%- else -%}
       {%- set next_time = as_timestamp(next_start, default=0.0) -%}
-      {%- set alert = "Load Shedding starts in {d}d {h}h {m}m ({next})" -%}
+      {%- set alert = "Load Shedding starts in {countdown} ({next})" -%}
     {%- endif -%}
     {% if next_in > 1440 %}
       {%- set alert_type = "success" -%}
@@ -39,15 +41,17 @@ content: >-
     {% endif %}
   {%- elif is_state(area_sensor, "on") and ends_in -%}
     {%- set next_time = as_timestamp(next_end, default=0.0) -%}
-    {%- set next_in = ends_in if ends_in else 0 -%}
-    {%- set alert = "Load Shedding ends in {d}d {h}h {m}m ({next})" -%}
+    {# {%- set next_in = ends_in if ends_in else 0 -%} #}
+    {%- set alert = "Load Shedding ends in {countdown} ({next})" -%}
     {%- set alert_type = "error" -%}
   {%- endif -%}
 
-  {%- set next_in_sec = timedelta(minutes=next_in).total_seconds() | int(default=0) // 60 -%}
-  {%- set mins = next_in_sec % 60 -%}
-  {%- set hrs = next_in_sec // 60 % 24 -%}
-  {%- set days = next_in_sec // 1440 -%}
-  {%- set alert = alert.format(d=days, m=mins, h=hrs, next=next_time | timestamp_custom("%H:%M", True, default=0)) -%}
+  {% set mins = starts_in %}
+  {% if is_state(area_sensor, "on") %}
+    {% set mins = ends_in %}
+  {% endif %}
+  {% set countdown = "%02dh%02d"|format(mins // 60, mins % 60) %}
+
+  {%- set alert = alert.format(countdown=countdown, next=next_time | timestamp_custom("%H:%M", True)) -%}
 
   <ha-alert alert-type="{{ alert_type }}">{{ alert }}</ha-alert>
