@@ -9,7 +9,7 @@ DOMAIN: Final = "load_shedding"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
-VERSION: Final = "1.1.0"
+VERSION: Final = "1.4.0"
 DEFAULT_SCAN_INTERVAL: Final = 60
 AREA_UPDATE_INTERVAL: Final = 86400  # 60sec * 60min * 24h / daily
 QUOTA_UPDATE_INTERVAL: Final = 1800  # 60sec * 30min
@@ -43,6 +43,7 @@ CONF_ESKOM: Final = "eskom"
 
 ATTR_AREA: Final = "area"
 ATTR_AREAS: Final = "areas"
+ATTR_AREA_ID: Final = "area_id"
 ATTR_CURRENT: Final = "current"
 ATTR_END_IN: Final = "ends_in"
 ATTR_END_TIME: Final = "end_time"

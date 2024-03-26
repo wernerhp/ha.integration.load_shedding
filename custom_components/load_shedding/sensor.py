@@ -24,6 +24,7 @@ from load_shedding.providers import Area, Stage
 from . import LoadSheddingDevice
 from .const import (
     ATTR_AREA,
+    ATTR_AREA_ID,
     ATTR_END_IN,
     ATTR_END_TIME,
     ATTR_FORECAST,
@@ -293,6 +294,7 @@ class LoadSheddingAreaSensorEntity(
             forecast = data[ATTR_FORECAST]
 
         attrs = get_sensor_attrs(forecast)
+        attrs[ATTR_AREA_ID] = self.area.id
         attrs[ATTR_FORECAST] = forecast
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
@@ -435,7 +437,7 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
 
 def clean(data: dict) -> dict:
     """Remove default values from dict"""
-    for (key, value) in CLEAN_DATA.items():
+    for key, value in CLEAN_DATA.items():
         if key not in data:
             continue
         if data[key] == value:
