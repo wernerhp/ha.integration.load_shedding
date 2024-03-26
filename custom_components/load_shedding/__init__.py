@@ -84,7 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     area_coordinator.update_interval = timedelta(
         seconds=config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
-    for conf in config_entry.options.get(CONF_AREAS, {}).values():
+    for conf in config_entry.options.get(CONF_AREAS, []):
         area = Area(
             id=conf.get(CONF_ID),
             name=conf.get(CONF_NAME),
@@ -143,6 +143,30 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             CONF_AREAS: old_options.get(CONF_AREAS, {}),
         }
         config_entry.version = 4
+        hass.config_entries.async_update_entry(
+            config_entry, data=new_data, options=new_options
+        )
+
+    if config_entry.version == 4:
+        old_data = {**config_entry.data}
+        old_options = {**config_entry.options}
+        new_data = {}
+        new_options = {
+            CONF_API_KEY: old_options.get(CONF_API_KEY),
+            CONF_AREAS: [],
+        }
+        for field in old_options:
+            if field == CONF_AREAS:
+                areas = old_options.get(CONF_AREAS, {})
+                for area_id in areas:
+                    new_options[CONF_AREAS].append(areas[area_id])
+                continue
+
+            value = old_options.get(field)
+            if value is not None:
+                new_options[field] = value
+
+        config_entry.version = 5
         hass.config_entries.async_update_entry(
             config_entry, data=new_data, options=new_options
         )
