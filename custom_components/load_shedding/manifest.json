@@ -11,5 +11,5 @@
   "dependencies": [],
   "codeowners": ["@wernerhp"],
   "iot_class": "cloud_polling",
-  "version": "1.2.0"
+  "version": "1.4.0"
 }
