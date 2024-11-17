@@ -327,7 +327,13 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for event in esp.get("events", {}):
                 note = event.get("note")
                 parts = str(note).split(" ")
-                stage = Stage(int(parts[1]))
+                try:
+                    stage = Stage(int(parts[1]))
+                except ValueError:
+                    stage = Stage.NO_LOAD_SHEDDING
+                    if note == str(Stage.LOAD_REDUCTION):
+                        stage = Stage.LOAD_REDUCTION
+
                 start = datetime.fromisoformat(event.get("start")).astimezone(
                     timezone.utc
                 )
@@ -432,6 +438,29 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     forecast.append(
                         {
                             ATTR_STAGE: planned_stage,
+                            ATTR_START_TIME: start_time,
+                            ATTR_END_TIME: end_time,
+                        }
+                    )
+
+            if not forecast:
+                events = data.get(ATTR_EVENTS)
+
+                for timeslot in events:
+                    stage = timeslot.get(ATTR_STAGE)
+                    start_time = timeslot.get(ATTR_START_TIME)
+                    end_time = timeslot.get(ATTR_END_TIME)
+
+                    # Minimum event duration
+                    min_event_dur = self.stage_coordinator.config_entry.options.get(
+                        CONF_MIN_EVENT_DURATION, 30
+                    )  # minutes
+                    if end_time - start_time < timedelta(minutes=min_event_dur):
+                        continue
+
+                    forecast.append(
+                        {
+                            ATTR_STAGE: stage,
                             ATTR_START_TIME: start_time,
                             ATTR_END_TIME: end_time,
                         }
