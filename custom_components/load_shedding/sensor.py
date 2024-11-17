@@ -409,7 +409,10 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
             nxt = forecast[1]
 
     if cur:
-        data[ATTR_STAGE] = cur.get(ATTR_STAGE).value
+        try:
+            data[ATTR_STAGE] = cur.get(ATTR_STAGE).value
+        except AttributeError:
+            data[ATTR_STAGE] = Stage.NO_LOAD_SHEDDING.value
         data[ATTR_START_TIME] = cur.get(ATTR_START_TIME).isoformat()
         if ATTR_END_TIME in cur:
             data[ATTR_END_TIME] = cur.get(ATTR_END_TIME).isoformat()
@@ -421,7 +424,11 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
             data[ATTR_END_IN] = ends_in
 
     if nxt:
-        data[ATTR_NEXT_STAGE] = nxt.get(ATTR_STAGE).value
+        try:
+            data[ATTR_NEXT_STAGE] = nxt.get(ATTR_STAGE).values
+        except AttributeError:
+            data[ATTR_NEXT_STAGE] = Stage.NO_LOAD_SHEDDING.value
+
         data[ATTR_NEXT_START_TIME] = nxt.get(ATTR_START_TIME).isoformat()
         if ATTR_END_TIME in nxt:
             data[ATTR_NEXT_END_TIME] = nxt.get(ATTR_END_TIME).isoformat()

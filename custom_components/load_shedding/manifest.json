@@ -4,12 +4,12 @@
   "config_flow": true,
   "documentation": "https://github.com/wernerhp/ha_integration_load_shedding/blob/master/README.md",
   "issue_tracker": "https://github.com/wernerhp/ha_integration_load_shedding/issues",
-  "requirements": ["load_shedding==0.11.5"],
+  "requirements": ["load_shedding==0.12.1"],
   "ssdp": [],
   "zeroconf": [],
   "homekit": {},
   "dependencies": [],
   "codeowners": ["@wernerhp"],
   "iot_class": "cloud_polling",
-  "version": "1.4.0"
+  "version": "1.5.0"
 }
