@@ -1,39 +1,35 @@
 """The LoadShedding component."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Any
+
+from load_shedding.libs.sepush import SePush, SePushError
+from load_shedding.providers import Area, Stage
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    ATTR_SW_VERSION,
-    CONF_API_KEY,
-    CONF_ID,
-    CONF_NAME,
-    CONF_SCAN_INTERVAL,
     ATTR_IDENTIFIERS,
     ATTR_MANUFACTURER,
     ATTR_MODEL,
     ATTR_NAME,
+    ATTR_SW_VERSION,
     ATTR_VIA_DEVICE,
+    CONF_API_KEY,
+    CONF_ID,
+    CONF_NAME,
+    CONF_SCAN_INTERVAL,
     Platform,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from load_shedding.libs.sepush import SePush, SePushError
-from load_shedding.providers import Area, Stage, to_utc
 from .const import (
     API,
     AREA_UPDATE_INTERVAL,
-    STAGE_UPDATE_INTERVAL,
-    QUOTA_UPDATE_INTERVAL,
     ATTR_AREA,
     ATTR_END_TIME,
     ATTR_EVENTS,
@@ -49,12 +45,14 @@ from .const import (
     DOMAIN,
     MANUFACTURER,
     NAME,
+    QUOTA_UPDATE_INTERVAL,
+    STAGE_UPDATE_INTERVAL,
     VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.CALENDAR]
+PLATFORMS = [Platform.CALENDAR, Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -179,7 +177,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding Stage."""
 
     def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
-        """Initialize."""
+        """Initialize the stage coordinator."""
         super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
         self.data = {}
         self.sepush = sepush
@@ -188,7 +186,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
 
-        now = datetime.now(timezone.utc).replace(microsecond=0)
+        now = datetime.now(datetime.UTC).replace(microsecond=0)
         diff = 0
         if self.last_update is not None:
             diff = (now - self.last_update).seconds
@@ -199,7 +197,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             stage = await self.async_update_stage()
         except UpdateFailed as err:
-            _LOGGER.error("Unable to get stage: %s", err, exc_info=True)
+            _LOGGER.exception("Unable to get stage: %s", err)
             self.data = {}
         else:
             self.data = stage
@@ -209,7 +207,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_update_stage(self) -> dict:
         """Retrieve latest stage."""
-        now = datetime.now(timezone.utc).replace(microsecond=0)
+        now = datetime.now(datetime.UTC).replace(microsecond=0)
         try:
             esp = await self.hass.async_add_executor_job(self.sepush.status)
         except SePushError as err:
@@ -224,7 +222,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 planned = [
                     {
                         ATTR_STAGE: stage,
-                        ATTR_START_TIME: start_time.astimezone(timezone.utc),
+                        ATTR_START_TIME: start_time.astimezone(datetime.UTC),
                     }
                 ]
 
@@ -235,7 +233,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         next_stage.get("stage_start_timestamp")
                     )
                     prev_end = prev_end.replace(second=0, microsecond=0)
-                    planned[i][ATTR_END_TIME] = prev_end.astimezone(timezone.utc)
+                    planned[i][ATTR_END_TIME] = prev_end.astimezone(datetime.UTC)
 
                     # Next
                     stage = Stage(int(next_stage.get("stage", "0")))
@@ -246,7 +244,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     planned.append(
                         {
                             ATTR_STAGE: stage,
-                            ATTR_START_TIME: start_time.astimezone(timezone.utc),
+                            ATTR_START_TIME: start_time.astimezone(datetime.UTC),
                         }
                     )
 
@@ -276,7 +274,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         sepush: SePush,
         stage_coordinator: DataUpdateCoordinator,
     ) -> None:
-        """Initialize."""
+        """Initialize the area coordinator."""
         super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
         self.data = {}
         self.sepush = sepush
@@ -291,7 +289,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
 
-        now = datetime.now(timezone.utc).replace(microsecond=0)
+        now = datetime.now(datetime.UTC).replace(microsecond=0)
         diff = 0
         if self.last_update is not None:
             diff = (now - self.last_update).seconds
@@ -303,7 +301,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             area = await self.async_update_area()
         except UpdateFailed as err:
-            _LOGGER.error("Unable to get area schedule: %s", err, exc_info=True)
+            _LOGGER.exception("Unable to get area schedule: %s", err)
             self.data = {}
         else:
             self.data = area
@@ -335,9 +333,9 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         stage = Stage.LOAD_REDUCTION
 
                 start = datetime.fromisoformat(event.get("start")).astimezone(
-                    timezone.utc
+                    datetime.UTC
                 )
-                end = datetime.fromisoformat(event.get("end")).astimezone(timezone.utc)
+                end = datetime.fromisoformat(event.get("end")).astimezone(datetime.UTC)
 
                 events.append(
                     {
@@ -470,7 +468,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 
 def utc_dt(date: datetime, time: datetime) -> datetime:
-    """Given a date and time in SAST, this function returns a datetime object in UTC"""
+    """Given a date and time in SAST, this function returns a datetime object in UTC."""
     sast = timezone(timedelta(hours=+2), "SAST")
 
     return time.replace(
@@ -480,14 +478,14 @@ def utc_dt(date: datetime, time: datetime) -> datetime:
         second=0,
         microsecond=0,
         tzinfo=sast,
-    ).astimezone(timezone.utc)
+    ).astimezone(datetime.UTC)
 
 
 class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding Quota."""
 
     def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
-        """Initialize."""
+        """Initialize the quota coordinator."""
         super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
         self.data = {}
         self.sepush = sepush
@@ -496,11 +494,11 @@ class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
 
-        now = datetime.now(timezone.utc).replace(microsecond=0)
+        now = datetime.now(datetime.UTC).replace(microsecond=0)
         try:
             quota = await self.async_update_quota()
         except UpdateFailed as err:
-            _LOGGER.error("Unable to get quota: %s", err, exc_info=True)
+            _LOGGER.exception("Unable to get quota: %s", err)
         else:
             self.data = quota
             self.last_update = now
@@ -520,7 +518,8 @@ class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 class LoadSheddingDevice(Entity):
     """Define a LoadShedding device."""
 
-    def __init__(self, coordinator):
+    def __init__(self, coordinator) -> None:
+        """Initialize the device."""
         super().__init__(coordinator)
         self.device_id = "{NAME}"
 

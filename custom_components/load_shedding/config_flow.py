@@ -4,7 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from load_shedding import Provider, Province, get_areas
+from load_shedding.libs.sepush import SePush, SePushError
+from load_shedding.providers import ProviderError, Stage
 import voluptuous as vol
+
 from homeassistant import config_entries
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -14,23 +18,20 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_API_KEY, CONF_DESCRIPTION, CONF_ID, CONF_NAME
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult, FlowHandler
+from homeassistant.data_entry_flow import FlowResult
 
-from load_shedding import Provider, Province, get_areas
-from load_shedding.libs.sepush import SePush, SePushError
-from load_shedding.providers import ProviderError, Stage
 from .const import (
-    CONF_AREA_ID,
-    CONF_AREAS,
-    CONF_SEARCH,
-    DOMAIN,
-    NAME,
     CONF_ACTION,
     CONF_ADD_AREA,
+    CONF_AREA_ID,
+    CONF_AREAS,
     CONF_DELETE_AREA,
-    CONF_MULTI_STAGE_EVENTS,
     CONF_MIN_EVENT_DURATION,
+    CONF_MULTI_STAGE_EVENTS,
+    CONF_SEARCH,
     CONF_SETUP_API,
+    DOMAIN,
+    NAME,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,7 +43,8 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
 
     VERSION = 5
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize the flow handler."""
         self.provider: Provider = None
         self.api_key: str = ""
         self.areas: dict = {}
@@ -50,6 +52,7 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Get the options flow."""
         return LoadSheddingOptionsFlowHandler(config_entry)
 
     @classmethod
@@ -355,6 +358,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
             Stage.STAGE_8,
         ]:
             stages[stage.value] = f"{stage}"
+
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_SEARCH): str,
@@ -452,23 +456,21 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the flow step to delete an area."""
-        errors = None
+
         if user_input is None:
             area_idx = {}
             for idx, area in enumerate(self.options.get(CONF_AREAS, [])):
                 area_idx[idx] = area.get(CONF_NAME)
 
-            if not errors:
-                data_schema = vol.Schema(
-                    {
-                        vol.Optional(CONF_AREA_ID): vol.In(area_idx),
-                    }
-                )
+            data_schema = vol.Schema(
+                {
+                    vol.Optional(CONF_AREA_ID): vol.In(area_idx),
+                }
+            )
 
             return self.async_show_form(
                 step_id="delete_area",
                 data_schema=data_schema,
-                errors=errors,
             )
         else:
             new_areas = []

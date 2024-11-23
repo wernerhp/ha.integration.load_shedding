@@ -3,17 +3,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from homeassistant.components.calendar import (
-    CalendarEntity,
-    CalendarEvent,
-)
+from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import LoadSheddingDevice
 from .const import (
@@ -22,9 +17,9 @@ from .const import (
     ATTR_FORECAST,
     ATTR_STAGE,
     ATTR_START_TIME,
+    CONF_MULTI_STAGE_EVENTS,
     DOMAIN,
     NAME,
-    CONF_MULTI_STAGE_EVENTS,
 )
 
 
@@ -53,6 +48,7 @@ class LoadSheddingForecastCalendar(
     def __init__(
         self, coordinator: CoordinatorEntity, multi_stage_events: bool
     ) -> None:
+        """Initialize the forecast calendar."""
         super().__init__(coordinator)
         self.data = self.coordinator.data
 
@@ -65,6 +61,7 @@ class LoadSheddingForecastCalendar(
 
     @property
     def name(self) -> str | None:
+        """Return the forecast calendar name."""
         return f"{NAME} Forecast"
 
     @property

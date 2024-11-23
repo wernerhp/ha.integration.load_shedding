@@ -10,10 +10,10 @@ MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
 VERSION: Final = "1.5.0"
-DEFAULT_SCAN_INTERVAL: Final = 60
-AREA_UPDATE_INTERVAL: Final = 86400  # 60sec * 60min * 24h / daily
-QUOTA_UPDATE_INTERVAL: Final = 1800  # 60sec * 30min
-STAGE_UPDATE_INTERVAL: Final = 3600  # 60sec * 60min / hourly
+DEFAULT_SCAN_INTERVAL: Final = 60  # 60sec / every minute
+AREA_UPDATE_INTERVAL: Final = 86400  # 60sec * 60min * 24h / every day
+QUOTA_UPDATE_INTERVAL: Final = 1800  # 60sec * 60min * 0.5 / every half hour
+STAGE_UPDATE_INTERVAL: Final = 3600  # 60sec * 60min       / every hourly
 
 CONF_DEFAULT_SCHEDULE_STAGE: Final = "default_schedule_stage"
 CONF_MUNICIPALITY: Final = "municipality"
