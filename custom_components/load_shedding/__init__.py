@@ -1,12 +1,13 @@
 """The LoadShedding component."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 import logging
 from typing import Any
 
 from load_shedding.libs.sepush import SePush, SePushError
 from load_shedding.providers import Area, Stage
+import urllib3
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -186,7 +187,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
 
-        now = datetime.now(datetime.UTC).replace(microsecond=0)
+        now = datetime.now(UTC).replace(microsecond=0)
         diff = 0
         if self.last_update is not None:
             diff = (now - self.last_update).seconds
@@ -196,6 +197,9 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             stage = await self.async_update_stage()
+        except SePushError as err:
+            _LOGGER.error("Unable to get stage: %s", err)
+            self.data = {}
         except UpdateFailed as err:
             _LOGGER.exception("Unable to get stage: %s", err)
             self.data = {}
@@ -207,60 +211,55 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_update_stage(self) -> dict:
         """Retrieve latest stage."""
-        now = datetime.now(datetime.UTC).replace(microsecond=0)
-        try:
-            esp = await self.hass.async_add_executor_job(self.sepush.status)
-        except SePushError as err:
-            raise UpdateFailed(err) from err
-        else:
-            data = {}
-            statuses = esp.get("status", {})
-            for idx, area in statuses.items():
-                stage = Stage(int(area.get("stage", "0")))
-                start_time = datetime.fromisoformat(area.get("stage_updated"))
+        now = datetime.now(UTC).replace(microsecond=0)
+        esp = await self.hass.async_add_executor_job(self.sepush.status)
+
+        data = {}
+        statuses = esp.get("status", {})
+        for idx, area in statuses.items():
+            stage = Stage(int(area.get("stage", "0")))
+            start_time = datetime.fromisoformat(area.get("stage_updated"))
+            start_time = start_time.replace(second=0, microsecond=0)
+            planned = [
+                {
+                    ATTR_STAGE: stage,
+                    ATTR_START_TIME: start_time.astimezone(UTC),
+                }
+            ]
+
+            next_stages = area.get("next_stages", [])
+            for i, next_stage in enumerate(next_stages):
+                # Prev
+                prev_end = datetime.fromisoformat(
+                    next_stage.get("stage_start_timestamp")
+                )
+                prev_end = prev_end.replace(second=0, microsecond=0)
+                planned[i][ATTR_END_TIME] = prev_end.astimezone(UTC)
+
+                # Next
+                stage = Stage(int(next_stage.get("stage", "0")))
+                start_time = datetime.fromisoformat(
+                    next_stage.get("stage_start_timestamp")
+                )
                 start_time = start_time.replace(second=0, microsecond=0)
-                planned = [
+                planned.append(
                     {
                         ATTR_STAGE: stage,
-                        ATTR_START_TIME: start_time.astimezone(datetime.UTC),
+                        ATTR_START_TIME: start_time.astimezone(UTC),
                     }
-                ]
+                )
 
-                next_stages = area.get("next_stages", [])
-                for i, next_stage in enumerate(next_stages):
-                    # Prev
-                    prev_end = datetime.fromisoformat(
-                        next_stage.get("stage_start_timestamp")
-                    )
-                    prev_end = prev_end.replace(second=0, microsecond=0)
-                    planned[i][ATTR_END_TIME] = prev_end.astimezone(datetime.UTC)
+            filtered = []
+            for stage in planned:
+                if ATTR_END_TIME not in stage:
+                    stage[ATTR_END_TIME] = stage[ATTR_START_TIME] + timedelta(days=7)
+                if ATTR_END_TIME in stage and stage.get(ATTR_END_TIME) >= now:
+                    filtered.append(stage)
 
-                    # Next
-                    stage = Stage(int(next_stage.get("stage", "0")))
-                    start_time = datetime.fromisoformat(
-                        next_stage.get("stage_start_timestamp")
-                    )
-                    start_time = start_time.replace(second=0, microsecond=0)
-                    planned.append(
-                        {
-                            ATTR_STAGE: stage,
-                            ATTR_START_TIME: start_time.astimezone(datetime.UTC),
-                        }
-                    )
-
-                filtered = []
-                for stage in planned:
-                    if ATTR_END_TIME not in stage:
-                        stage[ATTR_END_TIME] = stage[ATTR_START_TIME] + timedelta(
-                            days=7
-                        )
-                    if ATTR_END_TIME in stage and stage.get(ATTR_END_TIME) >= now:
-                        filtered.append(stage)
-
-                data[idx] = {
-                    ATTR_NAME: area.get("name", ""),
-                    ATTR_PLANNED: filtered,
-                }
+            data[idx] = {
+                ATTR_NAME: area.get("name", ""),
+                ATTR_PLANNED: filtered,
+            }
 
         return data
 
@@ -289,7 +288,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
 
-        now = datetime.now(datetime.UTC).replace(microsecond=0)
+        now = datetime.now(UTC).replace(microsecond=0)
         diff = 0
         if self.last_update is not None:
             diff = (now - self.last_update).seconds
@@ -300,6 +299,9 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             area = await self.async_update_area()
+        except SePushError as err:
+            _LOGGER.error("Unable to get area schedule: %s", err)
+            self.data = {}
         except UpdateFailed as err:
             _LOGGER.exception("Unable to get area schedule: %s", err)
             self.data = {}
@@ -315,10 +317,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         area_id_data: dict = {}
 
         for area in self.areas:
-            try:
-                esp = await self.hass.async_add_executor_job(self.sepush.area, area.id)
-            except SePushError as err:
-                raise UpdateFailed(err) from err
+            esp = await self.hass.async_add_executor_job(self.sepush.area, area.id)
 
             # Get events for area
             events = []
@@ -332,10 +331,8 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if note == str(Stage.LOAD_REDUCTION):
                         stage = Stage.LOAD_REDUCTION
 
-                start = datetime.fromisoformat(event.get("start")).astimezone(
-                    datetime.UTC
-                )
-                end = datetime.fromisoformat(event.get("end")).astimezone(datetime.UTC)
+                start = datetime.fromisoformat(event.get("start")).astimezone(UTC)
+                end = datetime.fromisoformat(event.get("end")).astimezone(UTC)
 
                 events.append(
                     {
@@ -478,7 +475,7 @@ def utc_dt(date: datetime, time: datetime) -> datetime:
         second=0,
         microsecond=0,
         tzinfo=sast,
-    ).astimezone(datetime.UTC)
+    ).astimezone(UTC)
 
 
 class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -494,9 +491,12 @@ class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
 
-        now = datetime.now(datetime.UTC).replace(microsecond=0)
+        now = datetime.now(UTC).replace(microsecond=0)
         try:
             quota = await self.async_update_quota()
+        except SePushError as err:
+            _LOGGER.error("Unable to get quota: %s", err)
+            self.data = {}
         except UpdateFailed as err:
             _LOGGER.exception("Unable to get quota: %s", err)
         else:
@@ -507,10 +507,7 @@ class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_update_quota(self) -> dict:
         """Retrieve latest quota."""
-        try:
-            esp = await self.hass.async_add_executor_job(self.sepush.check_allowance)
-        except SePushError as err:
-            raise UpdateFailed(err) from err
+        esp = await self.hass.async_add_executor_job(self.sepush.check_allowance)
 
         return esp.get("allowance", {})
 

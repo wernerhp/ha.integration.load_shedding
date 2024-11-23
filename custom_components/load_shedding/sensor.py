@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from load_shedding.providers import Area, Stage
@@ -153,7 +153,7 @@ class LoadSheddingStageSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        now = datetime.now(datetime.UTC)
+        now = datetime.now(UTC)
         # data = get_sensor_attrs(planned, planned[0].get(ATTR_STAGE, Stage.UNKNOWN))
         # data[ATTR_PLANNED] = []
         data = dict(self._attr_extra_state_attributes)
@@ -200,8 +200,6 @@ class LoadSheddingAreaSensorEntity(
 ):
     """Define a LoadShedding Area sensor entity."""
 
-    coordinator: CoordinatorEntity
-
     def __init__(self, coordinator: CoordinatorEntity, area: Area) -> None:
         """Initialize."""
         super().__init__(coordinator)
@@ -241,7 +239,7 @@ class LoadSheddingAreaSensorEntity(
         if not events:
             return STATE_OFF
 
-        now = datetime.now(datetime.UTC)
+        now = datetime.now(UTC)
 
         for event in events:
             if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
@@ -270,7 +268,7 @@ class LoadSheddingAreaSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        now = datetime.now(datetime.UTC)
+        now = datetime.now(UTC)
         data = dict(self._attr_extra_state_attributes)
         if events := self.data.get(ATTR_FORECAST, []):
             data[ATTR_FORECAST] = []
@@ -388,7 +386,7 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
             ATTR_STAGE: stage.value,
         }
 
-    now = datetime.now(datetime.UTC)
+    now = datetime.now(UTC)
     data = dict(DEFAULT_DATA)
     data[ATTR_STAGE] = stage.value
 
