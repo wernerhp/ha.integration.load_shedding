@@ -1,4 +1,5 @@
 """Support for the LoadShedding service."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -132,9 +133,7 @@ class LoadSheddingStageSensorEntity(
         if not planned:
             return Stage.NO_LOAD_SHEDDING
 
-        stage = planned[0].get(ATTR_STAGE, Stage.UNKNOWN)
-        if stage in [Stage.UNKNOWN]:
-            return self._attr_native_value
+        stage = planned[0].get(ATTR_STAGE, Stage.NO_LOAD_SHEDDING)
 
         self._attr_native_value = cast(StateType, stage)
         return self._attr_native_value
@@ -177,7 +176,7 @@ class LoadSheddingStageSensorEntity(
         planned = []
         if ATTR_PLANNED in data:
             planned = data[ATTR_PLANNED]
-            cur_stage = planned[0].get(ATTR_STAGE, Stage.UNKNOWN)
+            cur_stage = planned[0].get(ATTR_STAGE, Stage.NO_LOAD_SHEDDING)
 
         attrs = get_sensor_attrs(planned, cur_stage)
         attrs[ATTR_PLANNED] = planned
