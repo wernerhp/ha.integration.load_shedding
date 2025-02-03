@@ -1,4 +1,5 @@
 """Adds config flow for LoadShedding."""
+
 from __future__ import annotations
 
 import logging
@@ -103,6 +104,7 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                 elif status_code == 500:
                     errors["base"] = "sepush_500"
                 else:
+                    _LOGGER.error("Unable to initialise SePush API: %s", err)
                     errors["base"] = "provider_error"
             else:
                 return await self.async_step_lookup_areas(user_input)
@@ -165,8 +167,9 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                 results = await self.hass.async_add_executor_job(
                     get_areas, provider, search_text
                 )
-            except ProviderError:
+            except ProviderError as err:
                 _LOGGER.debug("Provider error", exc_info=True)
+                _LOGGER.error("Unable to initialise SePush API: %s", err)
                 errors["base"] = "provider_error"
             else:
                 self.areas = {}
@@ -317,6 +320,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                 elif status_code == 500:
                     errors["base"] = "sepush_500"
                 else:
+                    _LOGGER.error("Unable to initialise SePush API: %s", err)
                     errors["base"] = "provider_error"
             else:
                 self.api_key = api_key
