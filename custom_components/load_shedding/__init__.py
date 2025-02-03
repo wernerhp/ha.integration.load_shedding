@@ -1,4 +1,5 @@
 """The LoadShedding component."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta, timezone
@@ -131,7 +132,17 @@ async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> boo
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Migrate old entry."""
-    _LOGGER.debug("Migrating from version %s", config_entry.version)
+    LATEST_VERSION = 1
+    LATEST_MINOR_VERSION = 4
+    if (
+        config_entry.version == LATEST_VERSION
+        and config_entry.minor_version == LATEST_MINOR_VERSION
+    ):
+        return False
+
+    _LOGGER.debug(
+        "Migrating from version %s to %s", config_entry.version, LATEST_VERSION
+    )
 
     if config_entry.version == 3:
         old_data = {**config_entry.data}
@@ -141,9 +152,13 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             CONF_API_KEY: old_data.get(CONF_API_KEY),
             CONF_AREAS: old_options.get(CONF_AREAS, {}),
         }
-        config_entry.version = 4
+
         hass.config_entries.async_update_entry(
-            config_entry, data=new_data, options=new_options
+            config_entry,
+            data=new_data,
+            options=new_options,
+            version=1,
+            minor_version=4,
         )
 
     if config_entry.version == 4:
@@ -165,9 +180,12 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             if value is not None:
                 new_options[field] = value
 
-        config_entry.version = 5
         hass.config_entries.async_update_entry(
-            config_entry, data=new_data, options=new_options
+            config_entry,
+            data=new_data,
+            options=new_options,
+            version=1,
+            minor_version=5,
         )
 
     _LOGGER.info("Migration to version %s successful", config_entry.version)
