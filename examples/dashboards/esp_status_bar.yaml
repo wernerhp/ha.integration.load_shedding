@@ -170,59 +170,59 @@ content: >
           color: #e6bdb7;
       }
   </style>
-  {% set area_schedule = state_attr(area_sensor, "forecast") %}
-  {% if area_schedule is none %}{% set area_schedule = [] %}{% endif %}
-  {% for day_offset_idx in range(number_of_days) %}
-      {% set today_datetime_midnight = now().replace(hour=0,minute=0,second=0,microsecond=0) + timedelta(days=day_offset_idx) %}
+  {%- set area_schedule = state_attr(area_sensor, "forecast") %}
+  {%- if area_schedule is none %}{% set area_schedule = [] %}{% endif %}
+  {%- for day_offset_idx in range(number_of_days) %}
+      {%- set today_datetime_midnight = now().replace(hour=0,minute=0,second=0,microsecond=0) + timedelta(days=day_offset_idx) %}
       <div class="day_container">
           <h3 class="day_heading"
               style="{% if day_offset_idx == 0 or show_end_times %} margin-bottom: 1.5rem;
-                  {% else %} margin-bottom: 0.5rem;
-                  {% endif %}">{{ today_datetime_midnight.strftime("%A, %B %-d") }}</h3>
+                  {%- else %} margin-bottom: 0.5rem;
+                  {%- endif %}">{{ today_datetime_midnight.strftime("%A, %B %-d") }}</h3>
           <div class="slot_container">
-              {% set ns = namespace(active_class_name="", last_slot_was_active=false, current_slot_was_activated=false) %}
-              {% for half_hour_time_slot_idx in range(timeslots) %}
-                  {% set half_hour_time_slot = today_datetime_midnight + timedelta(minutes=30*half_hour_time_slot_idx) %}
-                  {% set ns.active_class_name = "" %}
-                  {% set ns.current_slot_was_activated = false %}
-                  {% for loadshedding in area_schedule %}
-                      {% if not ns.current_slot_was_activated %}
-                          {% if loadshedding["start_time"] <= half_hour_time_slot < loadshedding["end_time"] %}
-                              {% if not ns.last_slot_was_active %}
-                                  {% set percentage_of_region = (half_hour_time_slot_idx/timeslots)*100 %}
+              {%- set ns = namespace(active_class_name="", last_slot_was_active=false, current_slot_was_activated=false) %}
+              {%- for half_hour_time_slot_idx in range(timeslots) %}
+                  {%- set half_hour_time_slot = today_datetime_midnight + timedelta(minutes=30*half_hour_time_slot_idx) %}
+                  {%- set ns.active_class_name = "" %}
+                  {%- set ns.current_slot_was_activated = false %}
+                  {%- for loadshedding in area_schedule %}
+                      {%- if not ns.current_slot_was_activated %}
+                          {%- if loadshedding["start_time"] <= half_hour_time_slot < loadshedding["end_time"] %}
+                              {%- if not ns.last_slot_was_active %}
+                                  {%- set percentage_of_region = (half_hour_time_slot_idx/timeslots)*100 %}
                                   <span class="current_slot_indicator_start" style="left:{{ percentage_of_region }}%">&nbsp;</span>
                                   <span class="current_slot_indicator_start_text" style="left:{{ percentage_of_region }}%;
                                               {% if half_hour_time_slot.hour == 0 %}transform: none;{% elif half_hour_time_slot.hour == 23 %}transform: translate(-100%,0);{% endif %}">{{ half_hour_time_slot.strftime("%H:%M") }}</span>
-                              {% endif %}
-                              {% set ns.current_slot_was_activated = true %}
-                              {% set ns.last_slot_was_active = true %}
-                              {% set ns.active_class_name = "active_slot active_slot_" + loadshedding['stage']|lower|replace(' ','_') %}
-                          {% endif %}
-                      {% endif %}
-                  {% endfor %}
-                  {% if not ns.current_slot_was_activated %}
-                      {% if show_end_times and ns.last_slot_was_active %}
-                          {% set percentage_of_region = (half_hour_time_slot_idx/timeslots)*100 %}
+                              {%- endif %}
+                              {%- set ns.current_slot_was_activated = true %}
+                              {%- set ns.last_slot_was_active = true %}
+                              {%- set ns.active_class_name = "active_slot active_slot_" + loadshedding['stage']|lower|replace(' ','_') %}
+                          {%- endif %}
+                      {%- endif %}
+                  {%- endfor %}
+                  {%- if not ns.current_slot_was_activated %}
+                      {%- if show_end_times and ns.last_slot_was_active %}
+                          {%- set percentage_of_region = (half_hour_time_slot_idx/timeslots)*100 %}
                           <span class="current_slot_indicator_end"
                               style="left:{{ percentage_of_region }}%">&nbsp;</span>
                           <span class="current_slot_indicator_end_text"
                               style="left:{{ percentage_of_region }}%;
                                       {% if half_hour_time_slot.hour == 0 %}transform: none;{% elif half_hour_time_slot.hour == 23 %}transform: translate(-100%,0);{% endif %}">{{ half_hour_time_slot.strftime("%H:%M") }}</span>
-                      {% endif %}
-                      {% set ns.last_slot_was_active = false %}
-                  {% endif %}
+                      {%- endif %}
+                      {%- set ns.last_slot_was_active = false %}
+                  {%- endif %}
                   <div class="slot {% if now() > half_hour_time_slot + timedelta(minutes=30) %}fade_slot{% endif %} {{ ns.active_class_name }}">&nbsp;</div>
-              {% endfor %}
-              {% if day_offset_idx == 0 %}
-                  {% set current_time_indicator_progress = now().hour*2 + now().minute/30 %}
-                  {% set percentage_of_region = (current_time_indicator_progress/timeslots)*100 %}
+              {%- endfor %}
+              {%- if day_offset_idx == 0 %}
+                  {%- set current_time_indicator_progress = now().hour*2 + now().minute/30 %}
+                  {%- set percentage_of_region = (current_time_indicator_progress/timeslots)*100 %}
                   <span class="current_time_indicator"
                       style="left:{{ percentage_of_region }}%">&nbsp;</span>
-                  {% if not show_end_times %}
+                  {%- if not show_end_times %}
                     <span class="current_time_indicator_text"
                         style="left:{{ percentage_of_region }}%">Now</span>
-                  {% endif %}
-              {% endif %}
+                  {%- endif %}
+              {%- endif %}
           </div>
       </div>
-  {% endfor %}
+  {%- endfor %}
