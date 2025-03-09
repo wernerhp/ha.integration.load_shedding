@@ -1,11 +1,24 @@
 alias: Load Shedding Reload
 description: "Reloads the integration every night to work around Issue #70/#71"
-trigger:
-  - platform: time
-    at: "00:00:00"
-condition: []
-action:
-  - service: homeassistant.reload_config_entry
-    data:
-      entry_id: ee9d0703259463a110ef7b96a8c8c773
+triggers:
+  - at: "00:00:00"
+    trigger: time
+conditions: []
+actions:
+  - variables:
+      config_entry: "{{ config_entry_id(integration_entities(\"Load Shedding\") | first) }}"
+  - alias: Config entry found?
+    if:
+      - condition: template
+        value_template: "{{ config_entry != None }}"
+        alias: Config Entry var is set
+    then:
+      - data:
+          entry_id: "{{ config_entry }}"
+        action: homeassistant.reload_config_entry
+        alias: Reload Config Entry
+    else:
+      - alias: Config Entry not Found
+        stop: Config entry for Load Shedding not found
+        error: true
 mode: single
