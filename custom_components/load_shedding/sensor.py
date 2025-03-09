@@ -148,13 +148,10 @@ class LoadSheddingStageSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        # planned = self.data.get(ATTR_PLANNED, [])
         if not self.data:
             return self._attr_extra_state_attributes
 
         now = datetime.now(UTC)
-        # data = get_sensor_attrs(planned, planned[0].get(ATTR_STAGE, Stage.UNKNOWN))
-        # data[ATTR_PLANNED] = []
         data = dict(self._attr_extra_state_attributes)
         if events := self.data.get(ATTR_PLANNED, []):
             data[ATTR_PLANNED] = []
@@ -373,14 +370,15 @@ def stage_forecast_to_data(stage_forecast: list) -> list:
     """Convert stage forecast to serializable data."""
     data = []
     for forecast in stage_forecast:
-        for schedule in forecast.get(ATTR_SCHEDULE, []):
-            data.append(
-                {
-                    ATTR_STAGE: forecast.get(ATTR_STAGE).value,
-                    ATTR_START_TIME: schedule[0].isoformat(),
-                    ATTR_END_TIME: schedule[1].isoformat(),
-                }
-            )
+        transformed_list = [
+            {
+                ATTR_STAGE: forecast.get(ATTR_STAGE).value,
+                ATTR_START_TIME: schedule[0].isoformat(),
+                ATTR_END_TIME: schedule[1].isoformat(),
+            }
+            for schedule in forecast.get(ATTR_SCHEDULE, [])
+        ]
+        data.extend(transformed_list)
     return data
 
 
