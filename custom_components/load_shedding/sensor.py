@@ -191,6 +191,8 @@ class LoadSheddingStageSensorEntity(
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
             self.data = data.get(self.idx)
+            # Explicitly get the native value to force state update
+            self._attr_native_value = self.native_value
             self.async_write_ha_state()
 
 
@@ -301,6 +303,8 @@ class LoadSheddingAreaSensorEntity(
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
             self.data = data.get(self.area.id)
+            # Explicitly get the native value to force state update
+            self._attr_native_value = self.native_value
             self.async_write_ha_state()
 
 
@@ -360,6 +364,8 @@ class LoadSheddingQuotaSensorEntity(
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
             self.data = data
+            # Explicitly get the native value to force state update
+            self._attr_native_value = self.native_value
             self.async_write_ha_state()
 
 
