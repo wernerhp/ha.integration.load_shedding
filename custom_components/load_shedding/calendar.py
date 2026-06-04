@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from homeassistant.components.calendar import CalendarEntity, CalendarEvent
+from homeassistant.components.calendar import (
+    DOMAIN as CALENDAR_DOMAIN,
+    CalendarEntity,
+    CalendarEvent,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import Entity
@@ -56,7 +60,7 @@ class LoadSheddingForecastCalendar(
             f"{self.coordinator.config_entry.entry_id}_calendar_forecast"
         )
         self._event: CalendarEvent | None = None
-        self.entity_id = f"{DOMAIN}.{DOMAIN}_forecast"
+        self.entity_id = f"{CALENDAR_DOMAIN}.{DOMAIN}_forecast"
         self.multi_stage_events = multi_stage_events
 
     @property

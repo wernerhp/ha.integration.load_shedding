@@ -8,7 +8,11 @@ from typing import Any, cast
 
 from load_shedding.providers import Area, Stage
 
-from homeassistant.components.sensor import RestoreSensor, SensorEntityDescription
+from homeassistant.components.sensor import (
+    DOMAIN as SENSOR_DOMAIN,
+    RestoreSensor,
+    SensorEntityDescription,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ATTRIBUTION, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant, callback
@@ -109,7 +113,7 @@ class LoadSheddingStageSensorEntity(
             entity_registry_enabled_default=True,
         )
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_{self.idx}"
-        self.entity_id = f"{DOMAIN}.{DOMAIN}_stage_{idx}"
+        self.entity_id = f"{SENSOR_DOMAIN}.{DOMAIN}_stage_{idx}"
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
@@ -213,7 +217,7 @@ class LoadSheddingAreaSensorEntity(
         self._attr_unique_id = (
             f"{self.coordinator.config_entry.entry_id}_sensor_{area.id}"
         )
-        self.entity_id = f"{DOMAIN}.{DOMAIN}_area_{area.id.replace('-', '_')}"
+        self.entity_id = f"{SENSOR_DOMAIN}.{DOMAIN}_area_{area.id.replace('-', '_')}"
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
@@ -323,7 +327,7 @@ class LoadSheddingQuotaSensorEntity(
         )
         self._attr_name = f"{NAME} SePush Quota"
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_se_push_quota"
-        self.entity_id = f"{DOMAIN}.{DOMAIN}_sepush_api_quota"
+        self.entity_id = f"{SENSOR_DOMAIN}.{DOMAIN}_sepush_api_quota"
 
     @property
     def name(self) -> str | None:
