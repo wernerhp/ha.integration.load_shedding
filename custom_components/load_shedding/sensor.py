@@ -213,7 +213,7 @@ class LoadSheddingAreaSensorEntity(
         self._attr_unique_id = (
             f"{self.coordinator.config_entry.entry_id}_sensor_{area.id}"
         )
-        self.entity_id = f"{DOMAIN}.{DOMAIN}_area_{area.id}"
+        self.entity_id = f"{DOMAIN}.{DOMAIN}_area_{area.id.replace('-', '_')}"
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
