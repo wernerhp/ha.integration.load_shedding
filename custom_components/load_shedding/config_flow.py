@@ -17,7 +17,13 @@ from homeassistant.config_entries import (
     OptionsFlow,
     OptionsFlowWithConfigEntry,
 )
-from homeassistant.const import CONF_API_KEY, CONF_DESCRIPTION, CONF_ID, CONF_NAME
+from homeassistant.const import (
+    CONF_API_KEY,
+    CONF_DESCRIPTION,
+    CONF_ID,
+    CONF_NAME,
+    __version__ as HA_VERSION,
+)
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
@@ -33,6 +39,7 @@ from .const import (
     CONF_SETUP_API,
     DOMAIN,
     NAME,
+    VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,10 +98,16 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
         if self.api_key:
             try:
                 # Validate the token by checking the allowance.
-                sepush = SePush(token=self.api_key)
+                sepush = SePush(
+                    token=self.api_key,
+                    user_agent_context={
+                        "ha_integration_load_shedding": VERSION,
+                        "homeassistant": HA_VERSION,
+                    },
+                )
                 await self.hass.async_add_executor_job(sepush.check_allowance)
             except SePushError as err:
-                status_code = err.__cause__.args[0]
+                status_code = err.status_code
                 if status_code == 400:
                     errors["base"] = "sepush_400"
                 elif status_code == 403:
@@ -306,11 +319,17 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
         if api_key:
             try:
                 # Validate the token by checking the allowance.
-                sepush = SePush(token=api_key)
+                sepush = SePush(
+                    token=api_key,
+                    user_agent_context={
+                        "ha_integration_load_shedding": VERSION,
+                        "homeassistant": HA_VERSION,
+                    },
+                )
                 esp = await self.hass.async_add_executor_job(sepush.check_allowance)
                 _LOGGER.debug("Validate API Key Response: %s", esp)
             except SePushError as err:
-                status_code = err.__cause__.args[0]
+                status_code = err.status_code
                 if status_code == 400:
                     errors["base"] = "sepush_400"
                 elif status_code == 403:

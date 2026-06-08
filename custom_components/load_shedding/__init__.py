@@ -8,7 +8,6 @@ from typing import Any
 
 from load_shedding.libs.sepush import SePush, SePushError
 from load_shedding.providers import Area, Stage
-import urllib3
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -22,9 +21,11 @@ from homeassistant.const import (
     CONF_ID,
     CONF_NAME,
     CONF_SCAN_INTERVAL,
+    __version__ as HA_VERSION,
     Platform,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -69,9 +70,23 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     sepush: SePush = None
     if api_key := config_entry.options.get(CONF_API_KEY):
-        sepush: SePush = SePush(token=api_key)
+        sepush: SePush = SePush(
+            token=api_key,
+            user_agent_context={
+                "ha_integration_load_shedding": VERSION,
+                "homeassistant": HA_VERSION,
+            },
+        )
     if not sepush:
         return False
+
+    # Clear any stale invalid-area-id repair issue if all configured areas are now valid.
+    issue_id = f"invalid_area_ids_{config_entry.entry_id}"
+    if not any(
+        "-" in conf.get(CONF_ID, "")
+        for conf in config_entry.options.get(CONF_AREAS, [])
+    ):
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
 
     stage_coordinator = LoadSheddingStageCoordinator(hass, sepush)
     stage_coordinator.update_interval = timedelta(
@@ -79,7 +94,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     )
 
     area_coordinator = LoadSheddingAreaCoordinator(
-        hass, sepush, stage_coordinator=stage_coordinator
+        hass, sepush, stage_coordinator=stage_coordinator,
+        entry_id=config_entry.entry_id,
     )
     area_coordinator.update_interval = timedelta(
         seconds=config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -290,6 +306,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         sepush: SePush,
         stage_coordinator: DataUpdateCoordinator,
+        entry_id: str | None = None,
     ) -> None:
         """Initialize the area coordinator."""
         super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
@@ -298,6 +315,8 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.last_update: datetime | None = None
         self.areas: list[Area] = []
         self.stage_coordinator = stage_coordinator
+        self._entry_id = entry_id
+        self._invalid_area_ids: set[str] = set()
 
     def add_area(self, area: Area = None) -> None:
         """Add a area to update."""
@@ -335,7 +354,32 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         area_id_data: dict = {}
 
         for area in self.areas:
-            esp = await self.hass.async_add_executor_job(self.sepush.area, area.id)
+            if area.id in self._invalid_area_ids:
+                _LOGGER.debug(
+                    "Skipping permanently-invalid area '%s' (%s)", area.name, area.id
+                )
+                continue
+
+            try:
+                esp = await self.hass.async_add_executor_job(self.sepush.area, area.id)
+            except SePushError as err:
+                if err.status_code == 400 and "-" in area.id:
+                    _LOGGER.warning(
+                        "Area '%s' (%s) has a legacy v2 area ID (contains '-'). "
+                        "It will be skipped until re-added with a valid v3 ID.",
+                        area.name,
+                        area.id,
+                    )
+                    self._invalid_area_ids.add(area.id)
+                    self._create_invalid_area_issue()
+                else:
+                    _LOGGER.error(
+                        "Unable to get schedule for area '%s' (%s): %s",
+                        area.name,
+                        area.id,
+                        err,
+                    )
+                continue
 
             # Get events for area
             events = []
@@ -480,6 +524,24 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
             data[ATTR_FORECAST] = forecast
+
+    def _create_invalid_area_issue(self) -> None:
+        """Create a Repairs issue listing all permanently-invalid area IDs."""
+        invalid_names = [
+            a.name for a in self.areas if a.id in self._invalid_area_ids
+        ]
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"invalid_area_ids_{self._entry_id}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="invalid_area_ids",
+            translation_placeholders={"areas": ", ".join(invalid_names)},
+            learn_more_url=(
+                "https://github.com/wernerhp/ha_integration_load_shedding/issues"
+            ),
+        )
 
 
 def utc_dt(date: datetime, time: datetime) -> datetime:

@@ -10,6 +10,24 @@ A Home Assistant integration to track your load schedding schedule.
 >🔑Get a Free (50 requests per day) API Key from [Eskom Se Push](https://eskomsepush.gumroad.com/l/api).  You can pay for a higher limit.  
 >⚠️Do not use more than one API key from the same IP.  Your key will be blocked.
 
+## ⚠️ SePush v3 Migration — Action Required for Existing Users
+
+SePush migrated their API from v2 to v3.  Area IDs changed format:
+
+| Version | Format | Example |
+|---------|--------|---------|
+| v2 (old) | hyphens | `eskde-10-fourways` |
+| v3 (current) | underscores | `za_gt_jhb_fourways_4pef` |
+
+**If your integration was configured before the v3 migration**, your stored area IDs may
+be in the old hyphen format.  The integration will detect this automatically and raise a
+**Home Assistant Repairs** issue (visible under **Settings → Repairs**) listing the
+affected areas with step-by-step remediation instructions.
+
+To fix: go to **Settings → Integrations → Load Shedding** → options, remove the
+affected area(s), and re-add them by searching for the area name to get the correct v3
+ID.
+
 # HACS Install 
 1. Go to **HACS Integrations** on your Home Assitant instance
 2. Select "+ **Explore & Download Repositories**" and search for "**Load Shedding**"

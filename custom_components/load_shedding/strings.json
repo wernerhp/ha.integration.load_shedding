@@ -31,7 +31,7 @@
       "provider_error": "Unable to reach Provider.  See Logs for details.",
       "no_results_found": "No results found.  Try searching for a different area with the same schedule as yours or choose a different provider.",
       "no_provider": "No provider selected.",
-      "sepush_400": "Bad request. Create a issue for the integration and include logs.",
+      "sepush_400": "Bad request. If you have existing areas configured, they may have legacy v2 area IDs (containing hyphens). Remove and re-add those areas to get the correct v3 IDs.",
       "sepush_403": "Invalid API Key / Token",
       "sepush_429": "Token quota exceeded",
       "sepush_500": "SePush server unavailable"
@@ -78,10 +78,16 @@
       "provider_error": "Unable to reach Provider.  See Logs for details.",
       "no_results_found": "No results found.  Try searching for a different area with the same schedule as yours or choose a different provider.",
       "no_provider": "No provider selected.",
-      "sepush_400": "Bad request. Create a issue for the integration and include logs.",
+      "sepush_400": "Bad request. If you have existing areas configured, they may have legacy v2 area IDs (containing hyphens). Remove and re-add those areas to get the correct v3 IDs.",
       "sepush_403": "Invalid API Key / Token",
       "sepush_429": "Token quota exceeded",
       "sepush_500": "SePush server unavailable"
+    }
+  },
+  "issues": {
+    "invalid_area_ids": {
+      "title": "Load Shedding area IDs need to be updated",
+      "description": "The following area(s) have legacy v2 area IDs (containing hyphens) that are no longer valid: **{areas}**.\n\nSePush migrated from API v2 (hyphen IDs, e.g. `eskde-10-fourways`) to v3 (underscore IDs, e.g. `za_gt_jhb_fourways_4pef`).\n\nTo resolve this, go to **Settings → Integrations → Load Shedding**, open the integration options, remove the affected area(s), and re-add them by searching for the area name to get the correct v3 ID."
     }
   }
 }
