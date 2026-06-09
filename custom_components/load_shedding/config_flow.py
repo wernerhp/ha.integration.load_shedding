@@ -45,6 +45,29 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_sepush_status_code(err: BaseException) -> int | None:
+    """Walk the exception chain and return the first SePushError.status_code found.
+
+    The library wraps SePushError inside ProviderError in two ways:
+      1. ``ProviderError(sepush_error)``  — sepush_error is in .args[0]
+      2. ``ProviderError(msg) from prev`` — prev is in .__cause__
+    This helper walks both paths so callers can surface a specific HTTP status.
+    """
+    seen: set[int] = set()
+    node: BaseException | None = err
+    while node is not None and id(node) not in seen:
+        seen.add(id(node))
+        if isinstance(node, SePushError) and node.status_code is not None:
+            return node.status_code
+        # ProviderError(SePushError(...)) stores the wrapped error in args[0]
+        if node.args and isinstance(node.args[0], BaseException):
+            inner = node.args[0]
+            if isinstance(inner, SePushError) and inner.status_code is not None:
+                return inner.status_code
+        node = node.__cause__ or node.__context__
+    return None
+
+
 @config_entries.HANDLERS.register(DOMAIN)
 class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
     """Config flow for LoadShedding."""
@@ -181,9 +204,17 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                     get_areas, provider, search_text
                 )
             except ProviderError as err:
-                _LOGGER.debug("Provider error", exc_info=True)
-                _LOGGER.error("Unable to initialise SePush API: %s", err)
-                errors["base"] = "provider_error"
+                _LOGGER.debug("Area search error", exc_info=True)
+                status_code = _get_sepush_status_code(err)
+                if status_code == 403:
+                    errors["base"] = "sepush_403"
+                elif status_code == 429:
+                    errors["base"] = "sepush_429"
+                elif status_code == 500:
+                    errors["base"] = "sepush_500"
+                else:
+                    _LOGGER.error("Unable to search for areas: %s", err)
+                    errors["base"] = "provider_error"
             else:
                 self.areas = {}
                 for area in results:
@@ -416,9 +447,18 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                 results = await self.hass.async_add_executor_job(
                     get_areas, provider, search_text
                 )
-            except ProviderError:
-                _LOGGER.debug("Provider error", exc_info=True)
-                errors["base"] = "provider_error"
+            except ProviderError as err:
+                _LOGGER.debug("Area search error", exc_info=True)
+                status_code = _get_sepush_status_code(err)
+                if status_code == 403:
+                    errors["base"] = "sepush_403"
+                elif status_code == 429:
+                    errors["base"] = "sepush_429"
+                elif status_code == 500:
+                    errors["base"] = "sepush_500"
+                else:
+                    _LOGGER.error("Unable to search for areas: %s", err)
+                    errors["base"] = "provider_error"
             else:
                 self.areas = {}
                 for area in results:
