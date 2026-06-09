@@ -1,6 +1,8 @@
 """Constants for LoadShedding integration."""
 from __future__ import annotations
 
+import json
+import pathlib
 from typing import Final
 
 API: Final = "API"
@@ -9,10 +11,12 @@ DOMAIN: Final = "load_shedding"
 MAX_FORECAST_DAYS: Final = 7
 NAME: Final = "Load Shedding"
 MANUFACTURER: Final = "@wernerhp"
-VERSION: Final = "1.6.1"
+VERSION: Final = json.loads(
+    (pathlib.Path(__file__).parent / "manifest.json").read_text()
+)["version"]
 DEFAULT_SCAN_INTERVAL: Final = 60  # 60sec / every minute
 AREA_UPDATE_INTERVAL: Final = 86400  # 60sec * 60min * 24h / every day
-QUOTA_UPDATE_INTERVAL: Final = 1800  # 60sec * 60min * 0.5 / every half hour
+QUOTA_UPDATE_INTERVAL: Final = 3600  # 60sec * 60min       / every hour
 STAGE_UPDATE_INTERVAL: Final = 3600  # 60sec * 60min       / every hourly
 
 CONF_DEFAULT_SCHEDULE_STAGE: Final = "default_schedule_stage"

@@ -1,13 +1,11 @@
 """Regression tests for config_flow fixes.
 
 Issue #111: "Unable to remove area – value must be one of [0]"
-  Root cause: delete_area schema used integer dict keys; HA form submission
-  always delivers string values, so vol.In({0: ...}) rejected "0".
-
-Issue #111 (quota burn): "Unable to initialise SePush API: Unable to get areas from SePush."
-  Root cause: ProviderError from get_areas buries SePushError.status_code two
-  levels deep; config flow showed a generic error even on 429/403.
+Issue #111: quota burn surfacing buried SePushError.status_code
+Single-source-of-truth: manifest.json is the sole version declaration.
 """
+import json
+import pathlib
 import unittest
 
 import voluptuous as vol
@@ -357,6 +355,43 @@ class TestDeleteAreaSchemaRegression(unittest.TestCase):
         ]
         self.assertEqual(len(new_areas), 1)
         self.assertEqual(new_areas[0]["id"], "tshwane-8-moreletapark")
+
+
+# ---------------------------------------------------------------------------
+# Single source of truth: manifest.json owns the version number
+# ---------------------------------------------------------------------------
+
+_MANIFEST_PATH = (
+    pathlib.Path(__file__).parent.parent
+    / "custom_components" / "load_shedding" / "manifest.json"
+)
+
+
+class TestVersionSingleSourceOfTruth(unittest.TestCase):
+    """manifest.json is the sole place to bump the version.
+    const.py must read from it, not hard-code a duplicate string."""
+
+    def test_manifest_has_version(self):
+        manifest = json.loads(_MANIFEST_PATH.read_text())
+        self.assertIn("version", manifest)
+        self.assertRegex(manifest["version"], r"^\d+\.\d+\.\d+$")
+
+    def test_const_reads_version_from_manifest(self):
+        """const.py must not hard-code a version string separate from manifest."""
+        const_src = (
+            _MANIFEST_PATH.parent / "const.py"
+        ).read_text()
+
+        manifest_version = json.loads(_MANIFEST_PATH.read_text())["version"]
+
+        # const.py must reference manifest.json, not a bare quoted version string
+        self.assertIn("manifest.json", const_src,
+                      "const.py should read version from manifest.json")
+        # The hard-coded version string must NOT appear as a quoted literal
+        self.assertNotIn(f'"{manifest_version}"', const_src,
+                         "Version must not be duplicated as a quoted literal in const.py")
+        self.assertNotIn(f"'{manifest_version}'", const_src,
+                         "Version must not be duplicated as a quoted literal in const.py")
 
 
 if __name__ == "__main__":
