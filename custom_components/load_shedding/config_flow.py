@@ -483,11 +483,11 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
         if user_input is None:
             area_idx = {}
             for idx, area in enumerate(self.options.get(CONF_AREAS, [])):
-                area_idx[idx] = area.get(CONF_NAME)
+                area_idx[str(idx)] = area.get(CONF_NAME)
 
             data_schema = vol.Schema(
                 {
-                    vol.Optional(CONF_AREA_ID): vol.In(area_idx),
+                    vol.Required(CONF_AREA_ID): vol.In(area_idx),
                 }
             )
 
@@ -497,8 +497,9 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
             )
         else:
             new_areas = []
+            selected_area_idx = str(user_input.get(CONF_AREA_ID))
             for idx, area in enumerate(self.options.get(CONF_AREAS, [])):
-                if idx == user_input.get(CONF_AREA_ID):
+                if str(idx) == selected_area_idx:
                     continue
                 new_areas.append(area)
 

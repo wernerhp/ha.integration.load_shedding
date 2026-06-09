@@ -233,6 +233,9 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             stage = await self.async_update_stage()
         except SePushError as err:
             _LOGGER.error("Unable to get stage: %s", err)
+            if err.status_code in (400, 403, 429):
+                # Back off on permanent/auth/quota failures to avoid retry spam.
+                self.last_update = now
             self.data = {}
         except UpdateFailed as err:
             _LOGGER.exception("Unable to get stage: %s", err)
