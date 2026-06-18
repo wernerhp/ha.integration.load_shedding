@@ -57,7 +57,6 @@ class LoadSheddingForecastCalendar(
         self._attr_unique_id = (
             f"{self.coordinator.config_entry.entry_id}_calendar_forecast"
         )
-        self._event: CalendarEvent | None = None
         self.entity_id = f"{CALENDAR_DOMAIN}.{DOMAIN}_forecast"
         self.multi_stage_events = multi_stage_events
 
@@ -116,7 +115,7 @@ class LoadSheddingForecastCalendar(
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
             self.data = data
-        # Recompute and write state so the calendar reflects (or clears) the
-        # current event whenever the coordinator refreshes.
-        self._event = self.event
+        # Writing state re-reads the live ``event`` property so the calendar
+        # reflects (or clears) the current event whenever the coordinator
+        # refreshes.
         self.async_write_ha_state()
