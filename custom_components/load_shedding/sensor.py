@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from load_shedding.providers import Area, Stage
@@ -22,6 +22,12 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import LoadSheddingDevice
+from .helpers import (
+    filter_restorable_attrs,
+    is_load_shedding_active,
+    merge_forecast,
+    summarize_forecast,
+)
 from .const import (
     ATTR_AREA,
     ATTR_AREA_ID,
@@ -89,13 +95,8 @@ RESTORABLE_ATTRS = (
 
 def restorable_attrs(last_state) -> dict:
     """Return the data-bearing attributes worth restoring after a restart."""
-    if last_state is None:
-        return {}
-    return {
-        key: value
-        for key, value in last_state.attributes.items()
-        if key in RESTORABLE_ATTRS
-    }
+    attributes = last_state.attributes if last_state is not None else {}
+    return filter_restorable_attrs(attributes, RESTORABLE_ATTRS)
 
 
 async def async_setup_entry(
@@ -283,31 +284,11 @@ class LoadSheddingAreaSensorEntity(
             return self._attr_native_value
 
         events = self.data.get(ATTR_FORECAST, [])
-
         now = datetime.now(UTC)
 
-        # Default to OFF and only switch ON for a currently-active event. This
-        # ensures the state reliably clears when load shedding ends, even when
-        # every forecast event is already in the past.
-        state = STATE_OFF
-        for event in events:
-            end_time = event.get(ATTR_END_TIME)
-            start_time = event.get(ATTR_START_TIME)
-
-            # Skip events that have already ended.
-            if end_time is not None and end_time < now:
-                continue
-
-            # First event that hasn't ended yet decides the current state.
-            if (
-                event.get(ATTR_STAGE) != Stage.NO_LOAD_SHEDDING
-                and start_time is not None
-                and end_time is not None
-                and start_time <= now <= end_time
-            ):
-                state = STATE_ON
-            break
-
+        # Default to OFF; only ON for a currently-active event. Guarantees the
+        # state clears when load shedding ends (#103/#104).
+        state = STATE_ON if is_load_shedding_active(events, now) else STATE_OFF
         self._attr_native_value = cast(StateType, state)
         return self._attr_native_value
 
@@ -437,57 +418,11 @@ def stage_forecast_to_data(stage_forecast: list) -> list:
     return data
 
 
-def merge_forecast(forecast: list) -> list:
-    """Merge back-to-back forecast slots into calendar-style blocks.
-
-    Contiguous slots (where one slot's end time equals the next slot's start
-    time) are combined into a single entry, mirroring the calendar entity. When
-    the stage changes across the continuous block the stage labels are joined
-    (e.g. "Stage 2/Stage 4"). Slots shorter than the configured minimum event
-    duration have already been removed when the forecast was built.
-    """
-    merged: list = []
-    for slot in forecast:
-        start = slot.get(ATTR_START_TIME)
-        end = slot.get(ATTR_END_TIME)
-        stage = str(slot.get(ATTR_STAGE))
-
-        if merged and merged[-1][ATTR_END_TIME] == start:
-            prev = merged[-1]
-            prev[ATTR_END_TIME] = end
-            if stage not in prev[ATTR_STAGE].split("/"):
-                prev[ATTR_STAGE] = f"{prev[ATTR_STAGE]}/{stage}"
-        else:
-            merged.append(
-                {
-                    ATTR_STAGE: stage,
-                    ATTR_START_TIME: start,
-                    ATTR_END_TIME: end,
-                }
-            )
-
-    return merged
-
-
-def _continuous_block_end(forecast: list, start_index: int) -> tuple[datetime, int]:
-    """Return ``(end_time, next_index)`` for a continuous outage block.
-
-    Walks forward across back-to-back slots (where one slot's end time equals
-    the next slot's start time) so the reported end time reflects the true
-    continuous outage, even when the stage changes part-way through (#54).
-    ``next_index`` is the index of the first slot that is not part of the
-    continuous block.
-    """
-    end_time = forecast[start_index].get(ATTR_END_TIME)
-    index = start_index + 1
-    while index < len(forecast) and forecast[index].get(ATTR_START_TIME) == end_time:
-        end_time = forecast[index].get(ATTR_END_TIME)
-        index += 1
-    return end_time, index
-
-
 def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> dict:
-    """Get sensor attributes for the given forecast and stage."""
+    """Get sensor attributes for the given forecast and stage.
+
+    Delegates the cur/next computation to :func:`helpers.summarize_forecast`.
+    """
     if not forecast:
         return {
             ATTR_STAGE: stage.value,
@@ -497,55 +432,9 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
     data = dict(DEFAULT_DATA)
     data[ATTR_STAGE] = stage.value
 
-    cur, nxt, nxt_index = {}, {}, None
-    if now < forecast[0].get(ATTR_START_TIME):
-        # before
-        nxt, nxt_index = forecast[0], 0
-    elif forecast[0].get(ATTR_START_TIME) <= now <= forecast[0].get(ATTR_END_TIME, now):
-        # during
-        cur = forecast[0]
-        _, next_index = _continuous_block_end(forecast, 0)
-        if next_index < len(forecast):
-            nxt, nxt_index = forecast[next_index], next_index
-    elif forecast[0].get(ATTR_END_TIME) < now:
-        # after
-        if len(forecast) > 1:
-            nxt, nxt_index = forecast[1], 1
-
-    if cur:
-        try:
-            data[ATTR_STAGE] = cur.get(ATTR_STAGE).value
-        except AttributeError:
-            data[ATTR_STAGE] = Stage.NO_LOAD_SHEDDING.value
-        data[ATTR_START_TIME] = cur.get(ATTR_START_TIME).isoformat()
-
-        # Extend the end time across back-to-back slots so it reflects the
-        # true continuous outage even when the stage changes mid-block (#54).
-        end_time, _ = _continuous_block_end(forecast, 0)
-        data[ATTR_END_TIME] = end_time.isoformat()
-
-        ends_in = end_time - now
-        ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
-        ends_in = int(ends_in.total_seconds() / 60)  # minutes
-        data[ATTR_END_IN] = ends_in
-
-    if nxt:
-        try:
-            data[ATTR_NEXT_STAGE] = nxt.get(ATTR_STAGE).value
-        except AttributeError:
-            data[ATTR_NEXT_STAGE] = Stage.NO_LOAD_SHEDDING.value
-
-        data[ATTR_NEXT_START_TIME] = nxt.get(ATTR_START_TIME).isoformat()
-
-        # Likewise extend the next outage's end time across back-to-back slots.
-        next_end_time, _ = _continuous_block_end(forecast, nxt_index)
-        data[ATTR_NEXT_END_TIME] = next_end_time.isoformat()
-
-        start_time = nxt.get(ATTR_START_TIME)
-        starts_in = start_time - now
-        starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
-        starts_in = int(starts_in.total_seconds() / 60)  # minutes
-        data[ATTR_START_IN] = starts_in
+    summary = summarize_forecast(forecast, now, merge_contiguous=True)
+    for key, value in summary.items():
+        data[key] = value.isoformat() if isinstance(value, datetime) else value
 
     return data
 

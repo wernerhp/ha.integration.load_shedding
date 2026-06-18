@@ -15,12 +15,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import LoadSheddingDevice
+from .helpers import build_calendar_events, current_event, events_in_range
 from .const import (
     ATTR_AREA,
-    ATTR_END_TIME,
     ATTR_FORECAST,
-    ATTR_STAGE,
-    ATTR_START_TIME,
     CONF_MULTI_STAGE_EVENTS,
     DOMAIN,
     NAME,
@@ -77,43 +75,31 @@ class LoadSheddingForecastCalendar(
         holding on to a stale event.
         """
         now = datetime.now(UTC)
-        for event in self._build_events():
-            if event.end > now:
-                return event
-        return None
+        event = current_event(self._build_event_dicts(), now)
+        return self._to_calendar_event(event) if event else None
 
-    def _build_events(self) -> list[CalendarEvent]:
-        """Build the full, ordered list of forecast calendar events."""
-        events: list[CalendarEvent] = []
+    def _build_event_dicts(self) -> list[dict]:
+        """Build the ordered list of forecast events as plain dicts."""
+        area_forecasts = [
+            {
+                "id": area.id,
+                "name": area.name,
+                ATTR_FORECAST: self.data.get(area.id, {}).get(ATTR_FORECAST),
+            }
+            for area in self.coordinator.areas
+        ]
+        return build_calendar_events(area_forecasts, self.multi_stage_events)
 
-        for area in self.coordinator.areas:
-            area_forecast = self.data.get(area.id, {}).get(ATTR_FORECAST)
-            if not area_forecast:
-                continue
-            for forecast in area_forecast:
-                events.append(
-                    CalendarEvent(
-                        start=forecast.get(ATTR_START_TIME),
-                        end=forecast.get(ATTR_END_TIME),
-                        summary=str(forecast.get(ATTR_STAGE)),
-                        location=area.name,
-                        description=f"{NAME}",
-                    )
-                )
-
-        events.sort(key=lambda event: event.start)
-
-        if self.multi_stage_events:
-            merged: list[CalendarEvent] = []
-            for event in events:
-                if merged and merged[-1].end == event.start:
-                    merged[-1].summary = f"{merged[-1].summary}/{event.summary}"
-                    merged[-1].end = event.end
-                else:
-                    merged.append(event)
-            events = merged
-
-        return events
+    @staticmethod
+    def _to_calendar_event(event: dict) -> CalendarEvent:
+        """Wrap a plain event dict into a HA CalendarEvent."""
+        return CalendarEvent(
+            start=event["start"],
+            end=event["end"],
+            summary=event["summary"],
+            location=event["location"],
+            description=f"{NAME}",
+        )
 
     async def async_get_events(
         self,
@@ -122,16 +108,8 @@ class LoadSheddingForecastCalendar(
         end_date: datetime,
     ) -> list[CalendarEvent]:
         """Return calendar events within a datetime range."""
-        events = []
-        for event in self._build_events():
-            # Exclude events fully outside the requested window.
-            if event.end <= start_date:
-                continue
-            if event.start >= end_date:
-                continue
-            events.append(event)
-
-        return events
+        events = events_in_range(self._build_event_dicts(), start_date, end_date)
+        return [self._to_calendar_event(event) for event in events]
 
     @callback
     def _handle_coordinator_update(self) -> None:
