@@ -389,7 +389,7 @@ class LoadSheddingQuotaSensorEntity(
         return self._attr_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, list, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
@@ -397,7 +397,7 @@ class LoadSheddingQuotaSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        attrs = self.data
+        attrs = dict(self.data)
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 

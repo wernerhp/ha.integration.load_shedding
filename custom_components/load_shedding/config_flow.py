@@ -327,7 +327,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                 ): bool,
                 vol.Optional(
                     CONF_MIN_EVENT_DURATION,
-                    default=self.options.get(CONF_MIN_EVENT_DURATION, 31),
+                    default=self.options.get(CONF_MIN_EVENT_DURATION, 30),
                 ): int,
             }
         )

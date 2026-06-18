@@ -246,18 +246,19 @@ async def test_area_coordinator_cached_within_interval(
     coordinator.sepush.area.assert_not_called()
 
 
-async def test_area_coordinator_handles_api_error(
+async def test_area_coordinator_preserves_data_on_api_error(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """The area coordinator clears data on a non-area API error."""
+    """A transient area API error keeps the previously-fetched schedule."""
     entry = init_integration
     coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
         ATTR_AREA
     ]
+    assert AREA_ID in coordinator.data
     coordinator.last_update = None
     coordinator.sepush.area.side_effect = SePushError("boom", status_code=500)
     result = await coordinator._async_update_data()
-    assert result == {}
+    assert AREA_ID in result
 
 
 async def test_area_forecast_from_planned_schedule(
@@ -310,6 +311,38 @@ async def test_area_forecast_from_planned_schedule(
     assert forecast[0][ATTR_STAGE] is Stage.STAGE_2
     assert forecast[0][ATTR_START_TIME] == slot_start
     assert forecast[0][ATTR_END_TIME] == slot_end
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        pytest.param("Loadshedding", id="single_word"),
+        pytest.param("", id="empty"),
+        pytest.param(None, id="missing"),
+    ],
+)
+async def test_area_update_handles_malformed_event_note(
+    hass: HomeAssistant, init_integration: MockConfigEntry, note: str | None
+) -> None:
+    """A malformed event note does not crash the area update."""
+    entry = init_integration
+    coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_AREA
+    ]
+    coordinator.sepush.area.return_value = {
+        "events": [
+            {
+                "note": note,
+                "start": "2026-06-18T20:00:00+02:00",
+                "end": "2026-06-18T22:30:00+02:00",
+            }
+        ],
+        "schedule": {"days": []},
+    }
+
+    result = await coordinator.async_update_area()
+
+    assert result[AREA_ID][ATTR_EVENTS][0][ATTR_STAGE] is Stage.NO_LOAD_SHEDDING
 
 
 async def test_quota_coordinator_data(

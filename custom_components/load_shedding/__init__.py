@@ -16,7 +16,6 @@ from homeassistant.const import (
     ATTR_MODEL,
     ATTR_NAME,
     ATTR_SW_VERSION,
-    ATTR_VIA_DEVICE,
     CONF_API_KEY,
     CONF_ID,
     CONF_NAME,
@@ -363,7 +362,9 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.exception("Unable to get area schedule: %s", err)
             self.data = {}
         else:
-            self.data = area
+            # Merge so areas that failed to fetch this cycle keep their previous
+            # schedule instead of disappearing until the next update interval.
+            self.data = {**self.data, **area}
             self.last_update = now
 
         await self.async_area_forecast()
@@ -408,7 +409,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 parts = str(note).split(" ")
                 try:
                     stage = Stage(int(parts[1]))
-                except ValueError:
+                except (ValueError, IndexError):
                     stage = Stage.NO_LOAD_SHEDDING
                     if note == str(Stage.LOAD_REDUCTION):
                         stage = Stage.LOAD_REDUCTION
@@ -629,5 +630,4 @@ class LoadSheddingDevice(Entity):
             ATTR_MANUFACTURER: MANUFACTURER,
             ATTR_MODEL: API,
             ATTR_SW_VERSION: VERSION,
-            ATTR_VIA_DEVICE: (DOMAIN, self.device_id),
         }
