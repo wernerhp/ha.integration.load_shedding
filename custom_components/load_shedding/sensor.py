@@ -23,10 +23,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import LoadSheddingDevice
 from .helpers import (
+    build_sensor_attrs,
     filter_restorable_attrs,
     is_load_shedding_active,
     merge_forecast,
-    summarize_forecast,
 )
 from .const import (
     ATTR_AREA,
@@ -321,7 +321,7 @@ class LoadSheddingAreaSensorEntity(
         if ATTR_FORECAST in data:
             forecast = data[ATTR_FORECAST]
 
-        attrs = get_sensor_attrs(forecast)
+        attrs = get_sensor_attrs(forecast, merge_contiguous=True)
         attrs[ATTR_AREA_ID] = self.area.id
         attrs[ATTR_FORECAST] = forecast
         attrs[ATTR_FORECAST_CALENDAR] = merge_forecast(forecast)
@@ -418,25 +418,26 @@ def stage_forecast_to_data(stage_forecast: list) -> list:
     return data
 
 
-def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> dict:
+def get_sensor_attrs(
+    forecast: list,
+    stage: Stage = Stage.NO_LOAD_SHEDDING,
+    *,
+    merge_contiguous: bool = False,
+) -> dict:
     """Get sensor attributes for the given forecast and stage.
 
-    Delegates the cur/next computation to :func:`helpers.summarize_forecast`.
+    ``merge_contiguous`` extends end times across back-to-back slots. It must be
+    True only for the area forecast (#54); the stage ``planned`` list is
+    contiguous by construction and must keep its per-stage boundaries and
+    ``next_*`` fields (default False).
     """
-    if not forecast:
-        return {
-            ATTR_STAGE: stage.value,
-        }
-
-    now = datetime.now(UTC)
-    data = dict(DEFAULT_DATA)
-    data[ATTR_STAGE] = stage.value
-
-    summary = summarize_forecast(forecast, now, merge_contiguous=True)
-    for key, value in summary.items():
-        data[key] = value.isoformat() if isinstance(value, datetime) else value
-
-    return data
+    return build_sensor_attrs(
+        forecast,
+        stage,
+        DEFAULT_DATA,
+        datetime.now(UTC),
+        merge_contiguous=merge_contiguous,
+    )
 
 
 def clean(data: dict) -> dict:

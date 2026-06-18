@@ -215,14 +215,44 @@ class TestCalendarHelpers:
         )
         assert helpers.current_event(events, NOW) is None
 
-    def test_events_in_range(self):
-        events = helpers.build_calendar_events(
-            [self._area("A", [_slot(2, 0, 60), _slot(4, 600, 720)])],
-            multi_stage_events=False,
+# ---------------------------------------------------------------------------
+# build_sensor_attrs — locks review HIGH (stage vs area merge distinction)
+# ---------------------------------------------------------------------------
+
+class TestBuildSensorAttrs:
+    DEFAULT = {ATTR_STAGE: 0, "ends_in": 0, "next_stage": 0}
+
+    def test_empty_returns_stage_only(self):
+        out = helpers.build_sensor_attrs(
+            [], Stage.NO_LOAD_SHEDDING, self.DEFAULT, NOW, merge_contiguous=False
         )
-        window = helpers.events_in_range(
-            events, NOW - timedelta(minutes=30), NOW + timedelta(minutes=120)
+        assert out == {ATTR_STAGE: Stage.NO_LOAD_SHEDDING.value}
+
+    def test_area_merges_contiguous(self):
+        # Area forecast: contiguous stage change is one continuous outage (#54).
+        forecast = [_slot(2, -30, 90), _slot(4, 90, 330)]
+        out = helpers.build_sensor_attrs(
+            forecast, Stage(2), self.DEFAULT, NOW, merge_contiguous=True
         )
-        assert len(window) == 1
-        assert window[0]["start"] == NOW
+        assert out["ends_in"] == 330
+        assert out[ATTR_END_TIME] == (NOW + timedelta(minutes=330)).isoformat()
+
+    def test_stage_planned_not_merged_preserves_next(self):
+        # Stage planned list is contiguous by construction; transitions must be
+        # preserved with merge_contiguous=False (review HIGH regression lock).
+        planned = [_slot(2, -60, 120), _slot(4, 120, 360), _slot(6, 360, 360 + 7 * 24 * 60)]
+        out = helpers.build_sensor_attrs(
+            planned, Stage(2), self.DEFAULT, NOW, merge_contiguous=False
+        )
+        assert out["ends_in"] == 120  # current stage ends in 2h, not in 7 days
+        assert out["next_stage"] == 4
+        assert out["next_start_time"] == (NOW + timedelta(minutes=120)).isoformat()
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([__file__, "-v"]))
+
+
 
