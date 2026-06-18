@@ -1,5 +1,13 @@
-"""Common fixtures and mock data for the Load Shedding integration tests."""
+"""Common fixtures and mock data for the Load Shedding integration tests.
 
+Also adds the component directory to ``sys.path`` so the dependency-free
+``helpers`` and ``const`` modules can be imported standalone by the unit tests
+(``tests/test_helpers.py``) without triggering the package ``__init__`` (and its
+Home Assistant import).
+"""
+
+import pathlib
+import sys
 from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +20,12 @@ from homeassistant.core import HomeAssistant
 from custom_components.load_shedding.const import CONF_AREAS, DOMAIN
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+_COMPONENT_DIR = (
+    pathlib.Path(__file__).parent.parent / "custom_components" / "load_shedding"
+)
+if str(_COMPONENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_COMPONENT_DIR))
 
 API_KEY = "test-api-key"
 
@@ -154,3 +168,4 @@ async def init_integration(
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
     return mock_config_entry
+
