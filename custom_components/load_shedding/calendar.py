@@ -1,7 +1,7 @@
 """Support for the LoadShedding service."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from homeassistant.components.calendar import (
     DOMAIN as CALENDAR_DOMAIN,
@@ -70,8 +70,50 @@ class LoadSheddingForecastCalendar(
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Return the next upcoming event."""
-        return self._event
+        """Return the current or next upcoming event, or None.
+
+        Computed live from the coordinator data so that the calendar reliably
+        clears when load shedding ends (the forecast becomes empty) instead of
+        holding on to a stale event.
+        """
+        now = datetime.now(UTC)
+        for event in self._build_events():
+            if event.end > now:
+                return event
+        return None
+
+    def _build_events(self) -> list[CalendarEvent]:
+        """Build the full, ordered list of forecast calendar events."""
+        events: list[CalendarEvent] = []
+
+        for area in self.coordinator.areas:
+            area_forecast = self.data.get(area.id, {}).get(ATTR_FORECAST)
+            if not area_forecast:
+                continue
+            for forecast in area_forecast:
+                events.append(
+                    CalendarEvent(
+                        start=forecast.get(ATTR_START_TIME),
+                        end=forecast.get(ATTR_END_TIME),
+                        summary=str(forecast.get(ATTR_STAGE)),
+                        location=area.name,
+                        description=f"{NAME}",
+                    )
+                )
+
+        events.sort(key=lambda event: event.start)
+
+        if self.multi_stage_events:
+            merged: list[CalendarEvent] = []
+            for event in events:
+                if merged and merged[-1].end == event.start:
+                    merged[-1].summary = f"{merged[-1].summary}/{event.summary}"
+                    merged[-1].end = event.end
+                else:
+                    merged.append(event)
+            events = merged
+
+        return events
 
     async def async_get_events(
         self,
@@ -81,44 +123,13 @@ class LoadSheddingForecastCalendar(
     ) -> list[CalendarEvent]:
         """Return calendar events within a datetime range."""
         events = []
-
-        for area in self.coordinator.areas:
-            area_forecast = self.data.get(area.id, {}).get(ATTR_FORECAST)
-            if area_forecast:
-                for forecast in area_forecast:
-                    forecast_stage = str(forecast.get(ATTR_STAGE))
-                    forecast_start_time = forecast.get(ATTR_START_TIME)
-                    forecast_end_time = forecast.get(ATTR_END_TIME)
-
-                    if forecast_start_time <= start_date >= forecast_end_time:
-                        continue
-                    if forecast_start_time >= end_date <= forecast_end_time:
-                        continue
-
-                    event: CalendarEvent = CalendarEvent(
-                        start=forecast_start_time,
-                        end=forecast_end_time,
-                        summary=forecast_stage,
-                        location=area.name,
-                        description=f"{NAME}",
-                    )
-                    events.append(event)
-
-                if not self.multi_stage_events:
-                    continue
-
-                # Multi-stage events
-                for i, cur in enumerate(events):
-                    if i + 1 >= len(events):
-                        continue
-                    nxt = events[i + 1]
-                    if cur.end == nxt.start:
-                        cur.summary = f"{cur.summary}/{nxt.summary}"
-                        cur.end = nxt.end
-                        del events[i + 1]
-
-        if events:
-            self._event = events[0]
+        for event in self._build_events():
+            # Exclude events fully outside the requested window.
+            if event.end <= start_date:
+                continue
+            if event.start >= end_date:
+                continue
+            events.append(event)
 
         return events
 
@@ -127,4 +138,7 @@ class LoadSheddingForecastCalendar(
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
             self.data = data
-            self.async_write_ha_state()
+        # Recompute and write state so the calendar reflects (or clears) the
+        # current event whenever the coordinator refreshes.
+        self._event = self.event
+        self.async_write_ha_state()
