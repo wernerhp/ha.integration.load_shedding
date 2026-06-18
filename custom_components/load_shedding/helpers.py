@@ -65,10 +65,10 @@ def continuous_block_end(forecast: list, start_index: int) -> tuple[datetime, in
     slot's start) so the end reflects the true continuous outage even when the
     stage changes mid-block. ``next_index`` is the first slot not in the block.
     """
-    end_time = forecast[start_index].get(ATTR_END_TIME)
+    end_time = forecast[start_index][ATTR_END_TIME]
     index = start_index + 1
-    while index < len(forecast) and forecast[index].get(ATTR_START_TIME) == end_time:
-        end_time = forecast[index].get(ATTR_END_TIME)
+    while index < len(forecast) and forecast[index][ATTR_START_TIME] == end_time:
+        end_time = forecast[index][ATTR_END_TIME]
         index += 1
     return end_time, index
 

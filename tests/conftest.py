@@ -25,7 +25,10 @@ _COMPONENT_DIR = (
     pathlib.Path(__file__).parent.parent / "custom_components" / "load_shedding"
 )
 if str(_COMPONENT_DIR) not in sys.path:
-    sys.path.insert(0, str(_COMPONENT_DIR))
+    # Append (not insert) so the component dir sits after the stdlib, avoiding
+    # shadowing modules such as ``calendar`` while still allowing the
+    # dependency-free ``helpers``/``const`` modules to import standalone.
+    sys.path.append(str(_COMPONENT_DIR))
 
 API_KEY = "test-api-key"
 
