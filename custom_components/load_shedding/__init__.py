@@ -224,7 +224,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now = datetime.now(UTC).replace(microsecond=0)
         diff = 0
         if self.last_update is not None:
-            diff = (now - self.last_update).seconds
+            diff = (now - self.last_update).total_seconds()
 
         if 0 < diff < STAGE_UPDATE_INTERVAL:
             return self.data
@@ -331,7 +331,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now = datetime.now(UTC).replace(microsecond=0)
         diff = 0
         if self.last_update is not None:
-            diff = (now - self.last_update).seconds
+            diff = (now - self.last_update).total_seconds()
 
         if 0 < diff < AREA_UPDATE_INTERVAL:
             await self.async_area_forecast()
