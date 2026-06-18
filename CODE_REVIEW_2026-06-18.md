@@ -113,7 +113,7 @@ Lines ~244–400 are a verbatim duplicate of 1–242 (second `import unittest`, 
 | L4 — hoist `min_event_duration` lookup | ✅ done | `4a424a0` |
 | CI — run pytest | ✅ done | `38c7c04` |
 | **M2** — stage entities not created when first refresh is empty | ⏳ deferred — needs live HA e2e (no `homeassistant` in unit env) | — |
-| L5 — memoise calendar `event` rebuild | ⏳ optional, deferred | — |
+| L5 — memoise calendar `event` rebuild | ✅ done (cached, invalidated on coordinator update) | `a0bfc93` |
 
 Test suite: **51 passed** (config-flow + helpers), runnable via `pytest tests/`.
 
