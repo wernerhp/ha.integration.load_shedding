@@ -89,7 +89,9 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     ):
         ir.async_delete_issue(hass, DOMAIN, issue_id)
 
-    stage_coordinator = LoadSheddingStageCoordinator(hass, sepush)
+    stage_coordinator = LoadSheddingStageCoordinator(
+        hass, sepush, config_entry.entry_id
+    )
     stage_coordinator.update_interval = timedelta(
         seconds=config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
@@ -212,12 +214,15 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding Stage."""
 
-    def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
+    def __init__(
+        self, hass: HomeAssistant, sepush: SePush, entry_id: str | None = None
+    ) -> None:
         """Initialize the stage coordinator."""
         super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
         self.data = {}
         self.sepush = sepush
         self.last_update: datetime | None = None
+        self._entry_id = entry_id
 
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
@@ -233,6 +238,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if err.status_code in (400, 403, 429):
                 # Back off on permanent/auth/quota failures to avoid retry spam.
                 self.last_update = now
+                self._create_sepush_issue(err)
             self.data = {}
         except UpdateFailed as err:
             _LOGGER.exception("Unable to get stage: %s", err)
@@ -240,6 +246,9 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self.data = stage
             self.last_update = now
+            ir.async_delete_issue(
+                self.hass, DOMAIN, f"sepush_api_failure_{self._entry_id}"
+            )
 
         return self.data
 
@@ -296,6 +305,21 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
 
         return data
+
+    def _create_sepush_issue(self, err: SePushError) -> None:
+        """Surface an auth/quota SePush API failure as a Repairs issue."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"sepush_api_failure_{self._entry_id}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="sepush_api_failure",
+            translation_placeholders={"error": str(err)},
+            learn_more_url=(
+                "https://github.com/wernerhp/ha_integration_load_shedding/issues"
+            ),
+        )
 
 
 class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
