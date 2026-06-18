@@ -27,6 +27,7 @@ from .helpers import (
     filter_restorable_attrs,
     is_load_shedding_active,
     merge_forecast,
+    rehydrate_restored_datetimes,
 )
 from .const import (
     ATTR_AREA,
@@ -97,7 +98,8 @@ RESTORABLE_ATTRS = (
 def restorable_attrs(last_state) -> dict:
     """Return the data-bearing attributes worth restoring after a restart."""
     attributes = last_state.attributes if last_state is not None else {}
-    return filter_restorable_attrs(attributes, RESTORABLE_ATTRS)
+    restored = filter_restorable_attrs(attributes, RESTORABLE_ATTRS)
+    return rehydrate_restored_datetimes(restored)
 
 
 async def async_setup_entry(

@@ -176,6 +176,40 @@ class TestFilterRestorableAttrs:
 
 
 # ---------------------------------------------------------------------------
+# rehydrate_restored_datetimes — restore path type-consistency (#31)
+# ---------------------------------------------------------------------------
+
+class TestRehydrateRestoredDatetimes:
+    def test_parses_iso_strings_in_list_attrs(self):
+        start = datetime(2026, 6, 18, 18, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 6, 18, 20, 30, tzinfo=timezone.utc)
+        attributes = {
+            "forecast": [
+                {"stage": "Stage 2", "start_time": start.isoformat(),
+                 "end_time": end.isoformat()},
+            ],
+            "planned": [
+                {"stage": "Stage 2", "start_time": start.isoformat()},
+            ],
+            "start_time": start.isoformat(),
+        }
+        out = helpers.rehydrate_restored_datetimes(attributes)
+        assert out["forecast"][0]["start_time"] == start
+        assert out["forecast"][0]["end_time"] == end
+        assert out["planned"][0]["start_time"] == start
+        # Top-level summary fields are ISO strings in the live path too, so they
+        # are left untouched.
+        assert out["start_time"] == start.isoformat()
+
+    def test_ignores_non_list_and_malformed(self):
+        attributes = {"forecast": "nope", "planned": [{"start_time": "bad"}]}
+        out = helpers.rehydrate_restored_datetimes(attributes)
+        assert out["forecast"] == "nope"
+        assert out["planned"][0]["start_time"] == "bad"
+
+
+
+# ---------------------------------------------------------------------------
 # calendar event helpers
 # ---------------------------------------------------------------------------
 
