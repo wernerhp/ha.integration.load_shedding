@@ -184,7 +184,7 @@ class LoadSheddingStageSensorEntity(
         return self._attr_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, list, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
@@ -193,31 +193,26 @@ class LoadSheddingStageSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        if not self.data:
-            return self._attr_extra_state_attributes
-
         now = datetime.now(UTC)
-        data = dict(self._attr_extra_state_attributes)
-        if events := self.data.get(ATTR_PLANNED, []):
-            data[ATTR_PLANNED] = []
-            for event in events:
-                if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                    continue
+        # Rebuild the planned list from live coordinator data unconditionally so
+        # stale entries (and derived next_*/ends_in fields) are dropped when the
+        # planned list empties (C2).
+        planned = []
+        for event in self.data.get(ATTR_PLANNED, []):
+            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+                continue
 
-                planned = {
-                    ATTR_STAGE: event.get(ATTR_STAGE),
-                    ATTR_START_TIME: event.get(ATTR_START_TIME),
-                }
-                if ATTR_END_TIME in event:
-                    planned[ATTR_END_TIME] = event.get(ATTR_END_TIME)
+            entry = {
+                ATTR_STAGE: event.get(ATTR_STAGE),
+                ATTR_START_TIME: event.get(ATTR_START_TIME),
+            }
+            if ATTR_END_TIME in event:
+                entry[ATTR_END_TIME] = event.get(ATTR_END_TIME)
 
-                data[ATTR_PLANNED].append(planned)
+            planned.append(entry)
 
         cur_stage = Stage.NO_LOAD_SHEDDING
-
-        planned = []
-        if ATTR_PLANNED in data:
-            planned = data[ATTR_PLANNED]
+        if planned:
             cur_stage = planned[0].get(ATTR_STAGE, Stage.NO_LOAD_SHEDDING)
 
         attrs = get_sensor_attrs(planned, cur_stage)
@@ -225,7 +220,7 @@ class LoadSheddingStageSensorEntity(
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
-        self._attr_extra_state_attributes.update(attrs)
+        self._attr_extra_state_attributes = attrs
         return self._attr_extra_state_attributes
 
     @callback
@@ -294,7 +289,7 @@ class LoadSheddingAreaSensorEntity(
         return self._attr_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, list, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
@@ -303,24 +298,21 @@ class LoadSheddingAreaSensorEntity(
             return self._attr_extra_state_attributes
 
         now = datetime.now(UTC)
-        data = dict(self._attr_extra_state_attributes)
-        if events := self.data.get(ATTR_FORECAST, []):
-            data[ATTR_FORECAST] = []
-            for event in events:
-                if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                    continue
+        # Rebuild the forecast from live coordinator data unconditionally so
+        # stale events (and derived next_*/ends_in fields) are dropped when the
+        # forecast empties at the end of load shedding (C2).
+        forecast = []
+        for event in self.data.get(ATTR_FORECAST, []):
+            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+                continue
 
-                forecast = {
+            forecast.append(
+                {
                     ATTR_STAGE: event.get(ATTR_STAGE),
                     ATTR_START_TIME: event.get(ATTR_START_TIME),
                     ATTR_END_TIME: event.get(ATTR_END_TIME),
                 }
-
-                data[ATTR_FORECAST].append(forecast)
-
-        forecast = []
-        if ATTR_FORECAST in data:
-            forecast = data[ATTR_FORECAST]
+            )
 
         attrs = get_sensor_attrs(forecast, merge_contiguous=True)
         attrs[ATTR_AREA_ID] = self.area.id
@@ -329,7 +321,7 @@ class LoadSheddingAreaSensorEntity(
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
-        self._attr_extra_state_attributes.update(attrs)
+        self._attr_extra_state_attributes = attrs
         return self._attr_extra_state_attributes
 
     @callback
