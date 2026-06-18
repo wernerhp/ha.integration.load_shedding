@@ -248,10 +248,9 @@ def build_calendar_events(area_forecasts: list, multi_stage_events: bool) -> lis
     returned event is ``{"start", "end", "summary", "location"}``. Callers wrap
     these into HA ``CalendarEvent`` objects.
 
-    NOTE (review M1): when ``multi_stage_events`` is set, contiguous events are
-    merged globally across *all* areas, which can incorrectly combine slots from
-    different locations. This is preserved here to keep the refactor behaviour-
-    neutral; it is corrected in a follow-up commit.
+    When ``multi_stage_events`` is set, contiguous events are merged **per
+    location** so that adjacent slots from different areas are never combined
+    into one event (review M1).
     """
     events: list = []
     for area in area_forecasts:
@@ -271,14 +270,22 @@ def build_calendar_events(area_forecasts: list, multi_stage_events: bool) -> lis
     events.sort(key=lambda event: event["start"])
 
     if multi_stage_events:
-        merged: list = []
+        # Merge contiguous slots, but only within the same location.
+        by_location: dict = {}
+        order: list = []
         for event in events:
-            if merged and merged[-1]["end"] == event["start"]:
-                merged[-1]["summary"] = f"{merged[-1]['summary']}/{event['summary']}"
-                merged[-1]["end"] = event["end"]
+            location = event["location"]
+            if location not in by_location:
+                by_location[location] = []
+                order.append(location)
+            group = by_location[location]
+            if group and group[-1]["end"] == event["start"]:
+                group[-1]["summary"] = f"{group[-1]['summary']}/{event['summary']}"
+                group[-1]["end"] = event["end"]
             else:
-                merged.append(event)
-        events = merged
+                group.append(event)
+        events = [event for location in order for event in by_location[location]]
+        events.sort(key=lambda event: event["start"])
 
     return events
 
@@ -301,5 +308,6 @@ def events_in_range(events: list, start_date: datetime, end_date: datetime) -> l
             continue
         result.append(event)
     return result
+
 
 

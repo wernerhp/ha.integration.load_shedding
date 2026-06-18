@@ -196,6 +196,30 @@ class TestCalendarHelpers:
         assert len(events) == 1
         assert events[0]["summary"] == "Stage 2/Stage 4"
 
+    def test_multi_area_merge_keeps_locations_distinct(self):
+        # Two different areas with contiguous slots must NOT be merged into one
+        # event (review M1). Each location keeps its own event.
+        areas = [
+            self._area("A", [_slot(2, 0, 120)]),
+            self._area("B", [_slot(4, 120, 360)]),
+        ]
+        events = helpers.build_calendar_events(areas, multi_stage_events=True)
+        assert len(events) == 2
+        locations = {e["location"] for e in events}
+        assert locations == {"A", "B"}
+
+    def test_multi_area_merges_within_same_location(self):
+        # Same-location contiguous slots still merge even when another area's
+        # events interleave them in the globally-sorted list.
+        areas = [
+            self._area("A", [_slot(2, 0, 120), _slot(4, 120, 360)]),
+            self._area("B", [_slot(6, 60, 180)]),
+        ]
+        events = helpers.build_calendar_events(areas, multi_stage_events=True)
+        a_events = [e for e in events if e["location"] == "A"]
+        assert len(a_events) == 1
+        assert a_events[0]["summary"] == "Stage 2/Stage 4"
+
     def test_empty_area_skipped(self):
         areas = [self._area("A", None), self._area("B", [])]
         assert helpers.build_calendar_events(areas, multi_stage_events=False) == []
@@ -253,6 +277,7 @@ if __name__ == "__main__":
     import pytest
 
     raise SystemExit(pytest.main([__file__, "-v"]))
+
 
 
 
