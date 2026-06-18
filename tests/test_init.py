@@ -32,6 +32,7 @@ from custom_components.load_shedding.const import (
     ATTR_END_TIME,
     CONF_AREAS,
     DOMAIN,
+    STAGE_UPDATE_INTERVAL,
 )
 
 from .conftest import (
@@ -39,6 +40,7 @@ from .conftest import (
     FROZEN_TIME,
     LEGACY_AREA_ID,
     LEGACY_AREA_NAME,
+    STATUS_DATA,
     build_config_entry,
 )
 
@@ -121,6 +123,56 @@ async def test_valid_area_clears_stale_repair_issue(
         )
         is None
     )
+
+
+@pytest.mark.parametrize("status_code", [400, 403, 429])
+async def test_sepush_failure_creates_repair_issue(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+    status_code: int,
+) -> None:
+    """An auth/quota SePush failure on the stage poll raises a repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("api error", status_code=status_code)
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"sepush_api_failure_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.ERROR
+
+
+async def test_sepush_failure_issue_cleared_on_recovery(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A successful stage poll clears a previously raised SePush repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("quota exceeded", status_code=429)
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue_id = f"sepush_api_failure_{entry.entry_id}"
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    mock_sepush.status.side_effect = None
+    mock_sepush.status.return_value = STATUS_DATA
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    freezer.tick(timedelta(seconds=STAGE_UPDATE_INTERVAL + 1))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
 
 
 async def test_stage_coordinator_data(

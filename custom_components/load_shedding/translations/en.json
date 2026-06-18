@@ -88,6 +88,10 @@
         "invalid_area_ids": {
             "title": "Load Shedding area IDs need to be updated",
             "description": "The following area(s) have legacy v2 area IDs (containing hyphens) that are no longer valid: **{areas}**.\n\nSePush migrated from API v2 (hyphen IDs, e.g. `eskde-10-fourways`) to v3 (underscore IDs, e.g. `za_gt_jhb_fourways_4pef`).\n\nTo resolve this, go to **Settings → Integrations → Load Shedding**, open the integration options, remove the affected area(s), and re-add them by searching for the area name to get the correct v3 ID."
+        },
+        "sepush_api_failure": {
+            "title": "Unable to reach the SePush API",
+            "description": "Load Shedding could not retrieve data from the SePush API: **{error}**.\n\nThis is usually caused by an invalid API key, or by exceeding the daily request quota for your SePush token.\n\nCheck your token at https://sepush.co.za, and if needed update it under **Settings → Integrations → Load Shedding → Configure**. This issue clears automatically once data is fetched successfully."
         }
     }
 }
