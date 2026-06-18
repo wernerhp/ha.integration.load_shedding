@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Run the integration test suite with coverage.
+# Usage: ./scripts/test [extra pytest args]
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+python3 -m pytest tests \
+    --cov=custom_components.load_shedding \
+    --cov-report=term-missing \
+    "$@"

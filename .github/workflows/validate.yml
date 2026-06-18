@@ -15,3 +15,21 @@ jobs:
         uses: "hacs/action@main"
         with:
           category: "integration"
+
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4"
+      - name: Set up Python
+        uses: "actions/setup-python@v5"
+        with:
+          python-version: "3.13"
+      - name: Install test requirements
+        run: pip install -r requirements_test.txt
+      - name: Run tests
+        run: |
+          pytest tests \
+            --cov=custom_components.load_shedding \
+            --cov-report=term-missing \
+            --cov-fail-under=90
