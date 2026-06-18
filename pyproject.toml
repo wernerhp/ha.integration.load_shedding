@@ -1,0 +1,10 @@
+[project]
+name = "ha-integration-load-shedding"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
