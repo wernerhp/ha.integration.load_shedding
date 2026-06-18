@@ -66,6 +66,37 @@ CLEAN_DATA = {
     ATTR_SCHEDULE: [],
 }
 
+# Data-bearing attributes restored after a restart so the forecast/schedule
+# survive an API outage (e.g. an exhausted daily quota) until the first
+# successful poll, instead of disappearing (#31). Reserved/entity-managed
+# attributes (friendly_name, icon, unit, ...) are deliberately excluded.
+RESTORABLE_ATTRS = (
+    ATTR_STAGE,
+    ATTR_START_TIME,
+    ATTR_END_TIME,
+    ATTR_END_IN,
+    ATTR_START_IN,
+    ATTR_NEXT_STAGE,
+    ATTR_NEXT_START_TIME,
+    ATTR_NEXT_END_TIME,
+    ATTR_PLANNED,
+    ATTR_FORECAST,
+    ATTR_FORECAST_CALENDAR,
+    ATTR_SCHEDULE,
+    ATTR_AREA_ID,
+)
+
+
+def restorable_attrs(last_state) -> dict:
+    """Return the data-bearing attributes worth restoring after a restart."""
+    if last_state is None:
+        return {}
+    return {
+        key: value
+        for key, value in last_state.attributes.items()
+        if key in RESTORABLE_ATTRS
+    }
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -120,6 +151,13 @@ class LoadSheddingStageSensorEntity(
         """Handle entity which will be added."""
         if restored_data := await self.async_get_last_sensor_data():
             self._attr_native_value = restored_data.native_value
+        # Restore last known attributes so the planned schedule survives a
+        # restart while the API quota is exhausted, until the first poll (#31).
+        if attrs := restorable_attrs(await self.async_get_last_state()):
+            if not hasattr(self, "_attr_extra_state_attributes"):
+                self._attr_extra_state_attributes = {}
+            if not self._attr_extra_state_attributes:
+                self._attr_extra_state_attributes = attrs
         await super().async_added_to_hass()
 
     @property
@@ -224,6 +262,13 @@ class LoadSheddingAreaSensorEntity(
         """Handle entity which will be added."""
         if restored_data := await self.async_get_last_sensor_data():
             self._attr_native_value = restored_data.native_value
+        # Restore last known attributes so the forecast/schedule survive a
+        # restart while the API quota is exhausted, until the first poll (#31).
+        if attrs := restorable_attrs(await self.async_get_last_state()):
+            if not hasattr(self, "_attr_extra_state_attributes"):
+                self._attr_extra_state_attributes = {}
+            if not self._attr_extra_state_attributes:
+                self._attr_extra_state_attributes = attrs
         await super().async_added_to_hass()
 
     @property
