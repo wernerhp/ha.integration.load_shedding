@@ -20,9 +20,11 @@ if __package__:
         ATTR_END_IN,
         ATTR_END_TIME,
         ATTR_FORECAST,
+        ATTR_FORECAST_CALENDAR,
         ATTR_NEXT_END_TIME,
         ATTR_NEXT_STAGE,
         ATTR_NEXT_START_TIME,
+        ATTR_PLANNED,
         ATTR_STAGE,
         ATTR_START_IN,
         ATTR_START_TIME,
@@ -32,9 +34,11 @@ else:
         ATTR_END_IN,
         ATTR_END_TIME,
         ATTR_FORECAST,
+        ATTR_FORECAST_CALENDAR,
         ATTR_NEXT_END_TIME,
         ATTR_NEXT_STAGE,
         ATTR_NEXT_START_TIME,
+        ATTR_PLANNED,
         ATTR_STAGE,
         ATTR_START_IN,
         ATTR_START_TIME,
@@ -243,6 +247,40 @@ def filter_restorable_attrs(attributes: dict, allowed) -> dict:
         return {}
     allowed = set(allowed)
     return {key: value for key, value in attributes.items() if key in allowed}
+
+
+def rehydrate_restored_datetimes(attributes: dict) -> dict:
+    """Re-parse ISO datetime strings in restored list attributes.
+
+    State attributes are serialised to ISO strings when persisted, but the
+    forecast/planned/forecast_calendar lists expose datetime ``start_time``/
+    ``end_time`` values in the live path. Restored attributes therefore come
+    back as strings; convert them back to datetimes so the restore path is
+    type-consistent with live data and consumers (e.g. dashboard templates that
+    compare slots against ``now()``) keep working until the first poll (#31).
+    """
+    restored = dict(attributes)
+    for key in (ATTR_FORECAST, ATTR_PLANNED, ATTR_FORECAST_CALENDAR):
+        slots = restored.get(key)
+        if not isinstance(slots, list):
+            continue
+        restored[key] = [_rehydrate_slot(slot) for slot in slots]
+    return restored
+
+
+def _rehydrate_slot(slot: dict) -> dict:
+    """Return a copy of ``slot`` with ISO start/end strings parsed to datetime."""
+    if not isinstance(slot, dict):
+        return slot
+    rehydrated = dict(slot)
+    for time_key in (ATTR_START_TIME, ATTR_END_TIME):
+        value = rehydrated.get(time_key)
+        if isinstance(value, str):
+            try:
+                rehydrated[time_key] = datetime.fromisoformat(value)
+            except ValueError:
+                pass
+    return rehydrated
 
 
 def build_calendar_events(area_forecasts: list, multi_stage_events: bool) -> list:
