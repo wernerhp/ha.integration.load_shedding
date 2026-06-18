@@ -30,7 +30,7 @@ config/custom_components/load_shedding → ../load_shedding/custom_components/lo
 Run once after cloning into `config/load_shedding/` with HA already running:
 
 ```bash
-HA_TOKEN=<long-lived-token> python scripts/setup_dev.py
+SEPUSH_API_KEY=<key> HA_TOKEN=<long-lived-token> python scripts/setup_dev.py
 ```
 
 This is **idempotent** (safe to re-run). It:

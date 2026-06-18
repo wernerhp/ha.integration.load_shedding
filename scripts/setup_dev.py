@@ -7,6 +7,8 @@ and safe to re-run.
 
 What it does
 ------------
+0. Configures the Load Shedding integration (API key + areas) by writing
+   directly to .storage/core.config_entries and reloading the entry.
 1. Installs HACS into config/custom_components/hacs (latest release zip).
 2. Downloads the three frontend card JS files into config/www/community/:
    - lovelace-mushroom
@@ -27,12 +29,21 @@ Prerequisites
 
 Usage
 -----
-    HA_TOKEN=<token> python scripts/setup_dev.py
+    SEPUSH_API_KEY=<key> SEPUSH_AREAS=<json> HA_TOKEN=<token> python scripts/setup_dev.py
+
+Required environment variables:
+    HA_TOKEN            Long-lived HA access token
+    SEPUSH_API_KEY      Your EskomSePush API key
 
 Optional environment variables:
-    HA_URL          Base URL (default: http://localhost:8123)
-    HA_CONFIG_DIR   Path to HA config directory (default: ../.. relative to this script,
-                    i.e. config/ when the repo lives at config/load_shedding/)
+    SEPUSH_AREAS        JSON array of area objects, each with "id", "name", and
+                        "description".  Defaults to the four standard dev-container
+                        areas if not set.  Example:
+                        '[{"id":"za_gt_tsh_garsfontein_gaev","name":"Garsfontein","description":"Garsfontein, City of Tshwane, Gauteng"}]'
+    HA_URL              Base URL (default: http://localhost:8123)
+    HA_CONFIG_DIR       Path to HA config directory (default: one level above the
+                        repo root, i.e. config/ when the repo lives at
+                        config/load_shedding/)
 """
 
 from __future__ import annotations
@@ -42,6 +53,7 @@ import json
 import os
 import sys
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -101,6 +113,83 @@ def ha_post(path: str, payload: dict) -> int:
         return r.status
 
 
+# Default dev-container areas (matching the four currently configured).
+_DEFAULT_AREAS = [
+    {"id": "za_gt_tsh_garsfontein_gaev",    "name": "Garsfontein",   "description": "Garsfontein, City of Tshwane, Gauteng"},
+    {"id": "za_gt_tsh_lynnwoodglen_x049",   "name": "Lynnwood Glen", "description": "Lynnwood Glen, City of Tshwane, Gauteng"},
+    {"id": "za_gt_dc42_bedworthpark_h80w",  "name": "Bedworth Park", "description": "Bedworth Park, Emfuleni, Gauteng"},
+    {"id": "za_gt_dc48_fourways_3nl2",       "name": "Fourways",      "description": "Fourways, Randfontein, Gauteng"},
+]
+
+CONFIG_ENTRIES_STORAGE = HA_CONFIG_DIR / ".storage" / "core.config_entries"
+
+
+# ---------------------------------------------------------------------------
+# Step 0 — Load Shedding integration (API key + areas)
+# ---------------------------------------------------------------------------
+
+def configure_integration(api_key: str, areas: list[dict]) -> None:
+    """Write the Load Shedding config entry to .storage and reload it."""
+    print("[0/5] Configuring Load Shedding integration …")
+
+    storage = json.loads(CONFIG_ENTRIES_STORAGE.read_text(encoding="utf-8"))
+    entries: list[dict] = storage["data"]["entries"]
+
+    existing = next((e for e in entries if e["domain"] == "load_shedding"), None)
+    desired_options = {"api_key": api_key, "areas": areas}
+
+    if existing:
+        current_options = existing.get("options") or {}
+        if (current_options.get("api_key") == api_key
+                and current_options.get("areas") == areas):
+            print("      integration already configured with matching key/areas, skipping.")
+            return
+        existing["options"] = desired_options
+        entry_id = existing["entry_id"]
+        print(f"      updated existing entry {entry_id} with {len(areas)} area(s).")
+    else:
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+        # Generate an Ulid-style entry_id (HA uses uppercase base32 Ulids, but a
+        # simple UUID hex works fine for a dev bootstrap).
+        entry_id = uuid.uuid4().hex.upper()[:26]
+        new_entry = {
+            "created_at": now_iso,
+            "data": {},
+            "disabled_by": None,
+            "discovery_keys": {},
+            "domain": "load_shedding",
+            "entry_id": entry_id,
+            "minor_version": 1,
+            "modified_at": now_iso,
+            "options": desired_options,
+            "pref_disable_new_entities": False,
+            "pref_disable_polling": False,
+            "source": "user",
+            "subentries": [],
+            "title": "Load Shedding",
+            "unique_id": None,
+            "version": 5,
+        }
+        entries.append(new_entry)
+        print(f"      created new entry {entry_id} with {len(areas)} area(s).")
+
+    CONFIG_ENTRIES_STORAGE.write_text(
+        json.dumps(storage, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    # Reload the entry so HA picks up the new options without a full restart.
+    try:
+        ha_post("/api/services/homeassistant/reload_config_entry",
+                {"entry_id": entry_id})
+        print("      reloaded config entry.")
+    except Exception:
+        print("      ⚠️  Could not auto-reload — restart HA to apply the new config.")
+
+    area_ids = ", ".join(a["name"] for a in areas)
+    print(f"      areas: {area_ids}")
+
+
 # ---------------------------------------------------------------------------
 # Step 1 — HACS
 # ---------------------------------------------------------------------------
@@ -110,10 +199,10 @@ def install_hacs() -> None:
     manifest = dest / "manifest.json"
     if manifest.exists():
         version = json.loads(manifest.read_text())["version"]
-        print(f"[1/4] HACS already installed (v{version}), skipping.")
+        print(f"[1/5] HACS already installed (v{version}), skipping.")
         return
 
-    print("[1/4] Installing HACS …")
+    print("[1/5] Installing HACS …")
     url = "https://github.com/hacs/integration/releases/latest/download/hacs.zip"
     data = download(url)
     dest.mkdir(parents=True, exist_ok=True)
@@ -149,7 +238,7 @@ CARDS = [
 
 
 def install_cards() -> None:
-    print("[2/4] Installing frontend card resources …")
+    print("[2/5] Installing frontend card resources …")
     for card in CARDS:
         dest = WWW / card["dir"] / card["file"]
         if dest.exists():
@@ -285,7 +374,7 @@ AUTOMATIONS_YAML_CONTENT = """\
 
 
 def get_area_sensor() -> str:
-    """Return the entity_id of the first installed area sensor."""
+    """Return the entity_id of the first installed area sensor, or a sensible default."""
     req = urllib.request.Request(
         f"{HA_URL}/api/states",
         headers={"Authorization": f"Bearer {TOKEN}"},
@@ -296,15 +385,17 @@ def get_area_sensor() -> str:
         for s in states
         if s["entity_id"].startswith("sensor.load_shedding_area")
     )
-    if not areas:
-        raise RuntimeError(
-            "No area sensors found. Ensure the Load Shedding integration is configured."
-        )
-    return areas[0]
+    if areas:
+        return areas[0]
+    # Fall back to deriving the entity_id from the first configured area so
+    # the automations file can still be written even if the coordinator hasn't
+    # produced entities yet (e.g. immediately after step 0 reloads the entry).
+    first_area_id = _DEFAULT_AREAS[0]["id"].replace("-", "_")
+    return f"sensor.load_shedding_area_{first_area_id}"
 
 
 def install_automations() -> None:
-    print("[3/4] Writing automations …")
+    print("[3/5] Writing automations …")
     area = get_area_sensor()
     # Strip "sensor." prefix to get the part after sensor.load_shedding_area_
     area_suffix = area.removeprefix("sensor.load_shedding_area_")
@@ -327,7 +418,7 @@ def install_automations() -> None:
 # ---------------------------------------------------------------------------
 
 def install_dashboard() -> None:
-    print("[4/4] Setting up Lovelace dashboard …")
+    print("[4/5] Setting up Lovelace dashboard …")
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "setup_ha", SCRIPT_DIR / "setup_ha.py"
@@ -351,11 +442,29 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    api_key = os.environ.get("SEPUSH_API_KEY", "")
+    if not api_key:
+        print("Error: set SEPUSH_API_KEY to your EskomSePush API key.", file=sys.stderr)
+        print("  Get a free key at https://eskomsepush.gumroad.com/l/api", file=sys.stderr)
+        return 1
+
+    raw_areas = os.environ.get("SEPUSH_AREAS", "")
+    if raw_areas:
+        try:
+            areas = json.loads(raw_areas)
+        except json.JSONDecodeError as exc:
+            print(f"Error: SEPUSH_AREAS is not valid JSON: {exc}", file=sys.stderr)
+            return 1
+    else:
+        areas = _DEFAULT_AREAS
+        print("SEPUSH_AREAS not set — using default dev-container areas.")
+
     print(f"HA config dir : {HA_CONFIG_DIR}")
     print(f"HA URL        : {HA_URL}")
     print()
 
     try:
+        configure_integration(api_key, areas)
         install_hacs()
         install_cards()
         install_automations()
