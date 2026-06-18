@@ -28,6 +28,7 @@ from .const import (
     ATTR_END_IN,
     ATTR_END_TIME,
     ATTR_FORECAST,
+    ATTR_FORECAST_CALENDAR,
     ATTR_LAST_UPDATE,
     ATTR_NEXT_END_TIME,
     ATTR_NEXT_STAGE,
@@ -297,6 +298,7 @@ class LoadSheddingAreaSensorEntity(
         attrs = get_sensor_attrs(forecast)
         attrs[ATTR_AREA_ID] = self.area.id
         attrs[ATTR_FORECAST] = forecast
+        attrs[ATTR_FORECAST_CALENDAR] = merge_forecast(forecast)
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
@@ -388,6 +390,38 @@ def stage_forecast_to_data(stage_forecast: list) -> list:
         ]
         data.extend(transformed_list)
     return data
+
+
+def merge_forecast(forecast: list) -> list:
+    """Merge back-to-back forecast slots into calendar-style blocks.
+
+    Contiguous slots (where one slot's end time equals the next slot's start
+    time) are combined into a single entry, mirroring the calendar entity. When
+    the stage changes across the continuous block the stage labels are joined
+    (e.g. "Stage 2/Stage 4"). Slots shorter than the configured minimum event
+    duration have already been removed when the forecast was built.
+    """
+    merged: list = []
+    for slot in forecast:
+        start = slot.get(ATTR_START_TIME)
+        end = slot.get(ATTR_END_TIME)
+        stage = str(slot.get(ATTR_STAGE))
+
+        if merged and merged[-1][ATTR_END_TIME] == start:
+            prev = merged[-1]
+            prev[ATTR_END_TIME] = end
+            if stage not in prev[ATTR_STAGE].split("/"):
+                prev[ATTR_STAGE] = f"{prev[ATTR_STAGE]}/{stage}"
+        else:
+            merged.append(
+                {
+                    ATTR_STAGE: stage,
+                    ATTR_START_TIME: start,
+                    ATTR_END_TIME: end,
+                }
+            )
+
+    return merged
 
 
 def _continuous_block_end(forecast: list, start_index: int) -> tuple[datetime, int]:
