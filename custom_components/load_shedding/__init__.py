@@ -52,6 +52,7 @@ from .const import (
     STAGE_UPDATE_INTERVAL,
     VERSION,
 )
+from .helpers import should_refresh
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -222,11 +223,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retrieve latest load shedding data."""
 
         now = datetime.now(UTC).replace(microsecond=0)
-        diff = 0
-        if self.last_update is not None:
-            diff = (now - self.last_update).total_seconds()
-
-        if 0 < diff < STAGE_UPDATE_INTERVAL:
+        if not should_refresh(self.last_update, now, STAGE_UPDATE_INTERVAL):
             return self.data
 
         try:
@@ -329,11 +326,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Retrieve latest load shedding data."""
 
         now = datetime.now(UTC).replace(microsecond=0)
-        diff = 0
-        if self.last_update is not None:
-            diff = (now - self.last_update).total_seconds()
-
-        if 0 < diff < AREA_UPDATE_INTERVAL:
+        if not should_refresh(self.last_update, now, AREA_UPDATE_INTERVAL):
             await self.async_area_forecast()
             return self.data
 
