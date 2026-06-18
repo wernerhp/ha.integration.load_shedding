@@ -201,6 +201,34 @@ def summarize_forecast(
     return result
 
 
+def build_sensor_attrs(
+    forecast: list,
+    stage: Stage,
+    default_data: dict,
+    now: datetime,
+    *,
+    merge_contiguous: bool,
+) -> dict:
+    """Build the full, HA-serialisable sensor attribute dict.
+
+    ``merge_contiguous`` must be True for the *area forecast* (contiguous slots
+    are one continuous outage, #54) and False for the *stage planned* list
+    (contiguous entries are distinct stage transitions whose individual
+    boundaries and ``next_*`` fields must be preserved — review HIGH finding).
+    """
+    if not forecast:
+        return {ATTR_STAGE: stage.value}
+
+    data = dict(default_data)
+    data[ATTR_STAGE] = stage.value
+
+    summary = summarize_forecast(forecast, now, merge_contiguous=merge_contiguous)
+    for key, value in summary.items():
+        data[key] = value.isoformat() if isinstance(value, datetime) else value
+
+    return data
+
+
 def filter_restorable_attrs(attributes: dict, allowed) -> dict:
     """Return only the data-bearing attributes worth restoring after a restart.
 
@@ -273,4 +301,5 @@ def events_in_range(events: list, start_date: datetime, end_date: datetime) -> l
             continue
         result.append(event)
     return result
+
 
