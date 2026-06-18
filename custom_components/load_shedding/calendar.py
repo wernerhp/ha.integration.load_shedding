@@ -59,6 +59,9 @@ class LoadSheddingForecastCalendar(
         )
         self.entity_id = f"{CALENDAR_DOMAIN}.{DOMAIN}_forecast"
         self.multi_stage_events = multi_stage_events
+        # Cache of built event dicts; rebuilt only when coordinator data
+        # changes rather than on every property/read access (review L5).
+        self._event_dicts: list[dict] | None = None
 
     @property
     def name(self) -> str | None:
@@ -69,13 +72,23 @@ class LoadSheddingForecastCalendar(
     def event(self) -> CalendarEvent | None:
         """Return the current or next upcoming event, or None.
 
-        Computed live from the coordinator data so that the calendar reliably
+        Computed from the cached coordinator data so that the calendar reliably
         clears when load shedding ends (the forecast becomes empty) instead of
         holding on to a stale event.
         """
         now = datetime.now(UTC)
-        event = current_event(self._build_event_dicts(), now)
+        event = current_event(self._get_event_dicts(), now)
         return self._to_calendar_event(event) if event else None
+
+    def _get_event_dicts(self) -> list[dict]:
+        """Return the cached event dicts, building them on first use.
+
+        The event list depends only on the coordinator data (not on the current
+        time), so it is cached and invalidated in ``_handle_coordinator_update``.
+        """
+        if self._event_dicts is None:
+            self._event_dicts = self._build_event_dicts()
+        return self._event_dicts
 
     def _build_event_dicts(self) -> list[dict]:
         """Build the ordered list of forecast events as plain dicts."""
@@ -107,7 +120,7 @@ class LoadSheddingForecastCalendar(
         end_date: datetime,
     ) -> list[CalendarEvent]:
         """Return calendar events within a datetime range."""
-        events = events_in_range(self._build_event_dicts(), start_date, end_date)
+        events = events_in_range(self._get_event_dicts(), start_date, end_date)
         return [self._to_calendar_event(event) for event in events]
 
     @callback
@@ -115,7 +128,8 @@ class LoadSheddingForecastCalendar(
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
             self.data = data
-        # Writing state re-reads the live ``event`` property so the calendar
-        # reflects (or clears) the current event whenever the coordinator
-        # refreshes.
+        # Rebuild the cached event list now that the data changed; writing state
+        # re-reads the live ``event`` property so the calendar reflects (or
+        # clears) the current event.
+        self._event_dicts = self._build_event_dicts()
         self.async_write_ha_state()
