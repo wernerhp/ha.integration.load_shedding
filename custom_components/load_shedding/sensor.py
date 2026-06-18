@@ -109,11 +109,30 @@ async def async_setup_entry(
     area_coordinator = coordinators.get(ATTR_AREA)
     quota_coordinator = coordinators.get(ATTR_QUOTA)
 
-    entities: list[Entity] = []
-    for idx in stage_coordinator.data:
-        stage_entity = LoadSheddingStageSensorEntity(stage_coordinator, idx)
-        entities.append(stage_entity)
+    known_providers: set[str] = set()
 
+    @callback
+    def _async_add_stage_entities() -> None:
+        """Create stage entities for newly seen providers.
+
+        Providers are discovered from the SePush status payload, so when the
+        first poll is empty (e.g. the API quota is exhausted at startup) the
+        entities are created later, once data arrives (M2).
+        """
+        new = [idx for idx in stage_coordinator.data if idx not in known_providers]
+        if not new:
+            return
+        known_providers.update(new)
+        async_add_entities(
+            LoadSheddingStageSensorEntity(stage_coordinator, idx) for idx in new
+        )
+
+    entry.async_on_unload(
+        stage_coordinator.async_add_listener(_async_add_stage_entities)
+    )
+    _async_add_stage_entities()
+
+    entities: list[Entity] = []
     for area in area_coordinator.areas:
         area_entity = LoadSheddingAreaSensorEntity(area_coordinator, area)
         entities.append(area_entity)

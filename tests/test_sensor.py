@@ -1,8 +1,10 @@
 """Tests for the Load Shedding sensor platform."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 from freezegun.api import FrozenDateTimeFactory
+from load_shedding.libs.sepush import SePushError
 from load_shedding.providers import Stage
 
 from homeassistant.const import ATTR_NAME, STATE_OFF, STATE_ON
@@ -19,6 +21,7 @@ from custom_components.load_shedding.const import (
     ATTR_STAGE,
     ATTR_START_TIME,
     DOMAIN,
+    STAGE_UPDATE_INTERVAL,
 )
 from custom_components.load_shedding.sensor import (
     clean,
@@ -26,7 +29,7 @@ from custom_components.load_shedding.sensor import (
     stage_forecast_to_data,
 )
 
-from .conftest import AREA_ID, FROZEN_TIME
+from .conftest import AREA_ID, FROZEN_TIME, STATUS_DATA
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -302,3 +305,30 @@ async def test_stage_sensor_preserves_next_fields(
     attrs = hass.states.get("sensor.load_shedding_stage_eskom").attributes
     assert attrs["next_stage"] == Stage.STAGE_4.value
     assert "next_start_time" in attrs
+
+
+async def test_stage_entities_created_after_empty_first_refresh(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage entities appear once data arrives even if the first poll was empty (M2)."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("quota", status_code=429)
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.load_shedding_stage_eskom") is None
+    assert hass.states.get("sensor.load_shedding_stage_capetown") is None
+
+    mock_sepush.status.side_effect = None
+    mock_sepush.status.return_value = STATUS_DATA
+    coordinator = hass.data[DOMAIN][mock_config_entry.entry_id][ATTR_STAGE]
+    freezer.tick(timedelta(seconds=STAGE_UPDATE_INTERVAL + 1))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.load_shedding_stage_eskom") is not None
+    assert hass.states.get("sensor.load_shedding_stage_capetown") is not None

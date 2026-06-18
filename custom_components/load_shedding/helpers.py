@@ -11,7 +11,11 @@ from datetime import datetime, timedelta
 
 from load_shedding.providers import Stage
 
-try:  # Home Assistant runtime (imported as a package submodule)
+# Support both the Home Assistant runtime (package submodule, ``__package__``
+# set) and the standalone unit tests that put the component dir on ``sys.path``
+# and ``import helpers`` directly (``__package__`` empty). An explicit check
+# keeps real ImportErrors from being swallowed by a broad ``except``.
+if __package__:
     from .const import (
         ATTR_END_IN,
         ATTR_END_TIME,
@@ -23,7 +27,7 @@ try:  # Home Assistant runtime (imported as a package submodule)
         ATTR_START_IN,
         ATTR_START_TIME,
     )
-except ImportError:  # standalone/test import (component dir on sys.path)
+else:
     from const import (  # type: ignore[no-redef]
         ATTR_END_IN,
         ATTR_END_TIME,
