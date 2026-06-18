@@ -184,3 +184,121 @@ def test_stage_forecast_to_data() -> None:
             ATTR_END_TIME: end.isoformat(),
         }
     ]
+
+
+async def test_area_sensor_attributes_clear_when_forecast_empties(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Forecast-derived attributes clear when the forecast empties (C2)."""
+    freezer.move_to(FROZEN_TIME)
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_AREA]
+    entity_id = "sensor.load_shedding_area_za_gt_tsh_garsfontein_gaev"
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+
+    new_data = dict(coordinator.data)
+    new_data[AREA_ID] = {
+        ATTR_FORECAST: [
+            {
+                ATTR_STAGE: Stage.STAGE_2,
+                ATTR_START_TIME: now + timedelta(hours=1),
+                ATTR_END_TIME: now + timedelta(hours=3),
+            }
+        ],
+        ATTR_SCHEDULE: {},
+        ATTR_EVENTS: [],
+    }
+    coordinator.async_set_updated_data(new_data)
+    await hass.async_block_till_done()
+
+    attrs = hass.states.get(entity_id).attributes
+    assert attrs[ATTR_FORECAST]
+    assert "starts_in" in attrs
+
+    empty_data = dict(coordinator.data)
+    empty_data[AREA_ID] = {ATTR_FORECAST: [], ATTR_SCHEDULE: {}, ATTR_EVENTS: []}
+    coordinator.async_set_updated_data(empty_data)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OFF
+    assert not state.attributes.get(ATTR_FORECAST)
+    assert "starts_in" not in state.attributes
+    assert "start_time" not in state.attributes
+
+
+async def test_stage_sensor_attributes_clear_when_planned_empties(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage planned-derived attributes clear when the planned list empties (C2)."""
+    freezer.move_to(FROZEN_TIME)
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    entity_id = "sensor.load_shedding_stage_eskom"
+
+    attrs = hass.states.get(entity_id).attributes
+    assert attrs[ATTR_PLANNED]
+    assert "next_stage" in attrs
+
+    new_data = dict(coordinator.data)
+    new_data["eskom"] = {ATTR_NAME: "National", ATTR_PLANNED: []}
+    coordinator.async_set_updated_data(new_data)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.state == str(Stage.NO_LOAD_SHEDDING)
+    assert not state.attributes.get(ATTR_PLANNED)
+    assert "next_stage" not in state.attributes
+    assert "ends_in" not in state.attributes
+
+
+async def test_area_sensor_merges_contiguous_end_time(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Area sensor extends end_time across a contiguous stage change (#54 wiring)."""
+    freezer.move_to(FROZEN_TIME)
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_AREA]
+    entity_id = "sensor.load_shedding_area_za_gt_tsh_garsfontein_gaev"
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+
+    new_data = dict(coordinator.data)
+    new_data[AREA_ID] = {
+        ATTR_FORECAST: [
+            {
+                ATTR_STAGE: Stage.STAGE_2,
+                ATTR_START_TIME: now - timedelta(hours=1),
+                ATTR_END_TIME: now + timedelta(hours=1),
+            },
+            {
+                ATTR_STAGE: Stage.STAGE_4,
+                ATTR_START_TIME: now + timedelta(hours=1),
+                ATTR_END_TIME: now + timedelta(hours=3),
+            },
+        ],
+        ATTR_SCHEDULE: {},
+        ATTR_EVENTS: [],
+    }
+    coordinator.async_set_updated_data(new_data)
+    await hass.async_block_till_done()
+
+    attrs = hass.states.get(entity_id).attributes
+    assert attrs[ATTR_END_TIME] == (now + timedelta(hours=3)).isoformat()
+
+
+async def test_stage_sensor_preserves_next_fields(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage sensor keeps per-stage next_* fields (planned is not merged, #54 wiring)."""
+    freezer.move_to(FROZEN_TIME)
+    attrs = hass.states.get("sensor.load_shedding_stage_eskom").attributes
+    assert attrs["next_stage"] == Stage.STAGE_4.value
+    assert "next_start_time" in attrs

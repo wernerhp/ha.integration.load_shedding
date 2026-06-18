@@ -308,6 +308,3 @@ def events_in_range(events: list, start_date: datetime, end_date: datetime) -> l
             continue
         result.append(event)
     return result
-
-
-
