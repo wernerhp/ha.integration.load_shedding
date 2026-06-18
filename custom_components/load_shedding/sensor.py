@@ -238,27 +238,31 @@ class LoadSheddingAreaSensorEntity(
 
         events = self.data.get(ATTR_FORECAST, [])
 
-        if not events:
-            return STATE_OFF
-
         now = datetime.now(UTC)
 
+        # Default to OFF and only switch ON for a currently-active event. This
+        # ensures the state reliably clears when load shedding ends, even when
+        # every forecast event is already in the past.
+        state = STATE_OFF
         for event in events:
-            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+            end_time = event.get(ATTR_END_TIME)
+            start_time = event.get(ATTR_START_TIME)
+
+            # Skip events that have already ended.
+            if end_time is not None and end_time < now:
                 continue
 
-            if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
-                self._attr_native_value = cast(StateType, STATE_ON)
-                break
+            # First event that hasn't ended yet decides the current state.
+            if (
+                event.get(ATTR_STAGE) != Stage.NO_LOAD_SHEDDING
+                and start_time is not None
+                and end_time is not None
+                and start_time <= now <= end_time
+            ):
+                state = STATE_ON
+            break
 
-            if event.get(ATTR_START_TIME) > now:
-                self._attr_native_value = cast(StateType, STATE_OFF)
-                break
-
-            if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
-                self._attr_native_value = cast(StateType, STATE_OFF)
-                break
-
+        self._attr_native_value = cast(StateType, state)
         return self._attr_native_value
 
     @property
