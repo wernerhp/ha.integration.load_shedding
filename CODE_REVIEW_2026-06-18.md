@@ -96,3 +96,25 @@ Lines ~244–400 are a verbatim duplicate of 1–242 (second `import unittest`, 
 5. **M2** — stage-entity creation/restore robustness.
 6. **L1–L5** — cleanups alongside the above.
 
+---
+
+## Resolution status (updated 2026-06-18)
+
+| Finding | Status | Commit |
+|---|---|---|
+| Harness (pytest + conftest) | ✅ done | `0d79dbc` |
+| M4 — duplicated test file | ✅ done | `b2ef999` |
+| M3 — extract pure logic + tests | ✅ done | `cc57618` |
+| **HIGH** — stage-sensor merge regression | ✅ fixed + tests | `bdff55b` |
+| M1 — calendar cross-area merge | ✅ fixed + tests | `bd19aa0` |
+| L1 — dead `_event` field | ✅ done | `6c16ea3` |
+| L2 — `nxt_index` guard | ✅ resolved by M3 refactor (guard now in `helpers.summarize_forecast`) | `cc57618` |
+| L3 — empty `forecast_calendar` attr | ✅ done | `bce25bd` |
+| L4 — hoist `min_event_duration` lookup | ✅ done | `4a424a0` |
+| CI — run pytest | ✅ done | `38c7c04` |
+| **M2** — stage entities not created when first refresh is empty | ⏳ deferred — needs live HA e2e (no `homeassistant` in unit env) | — |
+| L5 — memoise calendar `event` rebuild | ⏳ optional, deferred | — |
+
+Test suite: **51 passed** (config-flow + helpers), runnable via `pytest tests/`.
+
+
