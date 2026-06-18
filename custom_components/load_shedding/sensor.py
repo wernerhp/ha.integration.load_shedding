@@ -396,6 +396,23 @@ def stage_forecast_to_data(stage_forecast: list) -> list:
     return data
 
 
+def _continuous_block_end(forecast: list, start_index: int) -> tuple[datetime, int]:
+    """Return ``(end_time, next_index)`` for a continuous outage block.
+
+    Walks forward across back-to-back slots (where one slot's end time equals
+    the next slot's start time) so the reported end time reflects the true
+    continuous outage, even when the stage changes part-way through (#54).
+    ``next_index`` is the index of the first slot that is not part of the
+    continuous block.
+    """
+    end_time = forecast[start_index].get(ATTR_END_TIME)
+    index = start_index + 1
+    while index < len(forecast) and forecast[index].get(ATTR_START_TIME) == end_time:
+        end_time = forecast[index].get(ATTR_END_TIME)
+        index += 1
+    return end_time, index
+
+
 def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> dict:
     """Get sensor attributes for the given forecast and stage."""
     if not forecast:
@@ -407,19 +424,20 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
     data = dict(DEFAULT_DATA)
     data[ATTR_STAGE] = stage.value
 
-    cur, nxt = {}, {}
+    cur, nxt, nxt_index = {}, {}, None
     if now < forecast[0].get(ATTR_START_TIME):
         # before
-        nxt = forecast[0]
+        nxt, nxt_index = forecast[0], 0
     elif forecast[0].get(ATTR_START_TIME) <= now <= forecast[0].get(ATTR_END_TIME, now):
         # during
         cur = forecast[0]
-        if len(forecast) > 1:
-            nxt = forecast[1]
+        _, next_index = _continuous_block_end(forecast, 0)
+        if next_index < len(forecast):
+            nxt, nxt_index = forecast[next_index], next_index
     elif forecast[0].get(ATTR_END_TIME) < now:
         # after
         if len(forecast) > 1:
-            nxt = forecast[1]
+            nxt, nxt_index = forecast[1], 1
 
     if cur:
         try:
@@ -427,24 +445,28 @@ def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> d
         except AttributeError:
             data[ATTR_STAGE] = Stage.NO_LOAD_SHEDDING.value
         data[ATTR_START_TIME] = cur.get(ATTR_START_TIME).isoformat()
-        if ATTR_END_TIME in cur:
-            data[ATTR_END_TIME] = cur.get(ATTR_END_TIME).isoformat()
 
-            end_time = cur.get(ATTR_END_TIME)
-            ends_in = end_time - now
-            ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
-            ends_in = int(ends_in.total_seconds() / 60)  # minutes
-            data[ATTR_END_IN] = ends_in
+        # Extend the end time across back-to-back slots so it reflects the
+        # true continuous outage even when the stage changes mid-block (#54).
+        end_time, _ = _continuous_block_end(forecast, 0)
+        data[ATTR_END_TIME] = end_time.isoformat()
+
+        ends_in = end_time - now
+        ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
+        ends_in = int(ends_in.total_seconds() / 60)  # minutes
+        data[ATTR_END_IN] = ends_in
 
     if nxt:
         try:
-            data[ATTR_NEXT_STAGE] = nxt.get(ATTR_STAGE).values
+            data[ATTR_NEXT_STAGE] = nxt.get(ATTR_STAGE).value
         except AttributeError:
             data[ATTR_NEXT_STAGE] = Stage.NO_LOAD_SHEDDING.value
 
         data[ATTR_NEXT_START_TIME] = nxt.get(ATTR_START_TIME).isoformat()
-        if ATTR_END_TIME in nxt:
-            data[ATTR_NEXT_END_TIME] = nxt.get(ATTR_END_TIME).isoformat()
+
+        # Likewise extend the next outage's end time across back-to-back slots.
+        next_end_time, _ = _continuous_block_end(forecast, nxt_index)
+        data[ATTR_NEXT_END_TIME] = next_end_time.isoformat()
 
         start_time = nxt.get(ATTR_START_TIME)
         starts_in = start_time - now
