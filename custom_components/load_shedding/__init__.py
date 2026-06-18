@@ -440,6 +440,12 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         eskom_stages = stages.get(eskom, {}).get(ATTR_PLANNED, [])
         cape_town_stages = stages.get(cape_town, {}).get(ATTR_PLANNED, [])
 
+        # Read the configured minimum event duration once, not per timeslot.
+        min_event_dur = self.stage_coordinator.config_entry.options.get(
+            CONF_MIN_EVENT_DURATION, 30
+        )  # minutes
+        min_event_duration = timedelta(minutes=min_event_dur)
+
         for area_id, data in self.data.items():
             stage_schedules = data.get(ATTR_SCHEDULE)
 
@@ -482,10 +488,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         continue
 
                     # Minimum event duration
-                    min_event_dur = self.stage_coordinator.config_entry.options.get(
-                        CONF_MIN_EVENT_DURATION, 30
-                    )  # minutes
-                    if end_time - start_time < timedelta(minutes=min_event_dur):
+                    if end_time - start_time < min_event_duration:
                         continue
 
                     forecast.append(
@@ -505,10 +508,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     end_time = timeslot.get(ATTR_END_TIME)
 
                     # Minimum event duration
-                    min_event_dur = self.stage_coordinator.config_entry.options.get(
-                        CONF_MIN_EVENT_DURATION, 30
-                    )  # minutes
-                    if end_time - start_time < timedelta(minutes=min_event_dur):
+                    if end_time - start_time < min_event_duration:
                         continue
 
                     forecast.append(
