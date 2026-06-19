@@ -103,6 +103,14 @@ ALLOWANCE_DATA = {
     }
 }
 
+# Concrete rate-limit cache as returned by ``sepush.rate_limit()`` (v3.1 headers).
+RATE_LIMIT_DATA = {
+    "used": 5,
+    "limit": 50,
+    "remaining": 45,
+    "reset": "2026-06-19T00:00:00+00:00",
+}
+
 
 def build_sepush_mock() -> MagicMock:
     """Return a MagicMock that mimics the SePush client used by the integration."""
@@ -110,6 +118,7 @@ def build_sepush_mock() -> MagicMock:
     sepush.status.return_value = STATUS_DATA
     sepush.area.return_value = AREA_DATA
     sepush.check_allowance.return_value = ALLOWANCE_DATA
+    sepush.rate_limit.return_value = RATE_LIMIT_DATA
     return sepush
 
 

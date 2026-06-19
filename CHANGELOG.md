@@ -1,6 +1,36 @@
-he ext# Changelog
+# Changelog
 
 All notable changes to this integration will be documented in this file.
+
+## [1.6.4] - 2026-06-19
+
+### Changed
+- **Dependency bump to `load_shedding==0.15.0`** — migrates the underlying SePush client
+  to the **Business API v3.1**. This is a transparent, fully backward-compatible change
+  for the integration:
+  - Base URL moves from `…/business/3.0` to `…/business/3.1`.
+  - The auth header is normalised to lowercase `token`.
+  - Quota is now read from the `x-ratelimit-*` response headers (v3.1 removed the
+    `/api_allowance` endpoint), which the shared SePush client caches on every call.
+- **Quota now read from the cache instead of a dedicated call.** The quota coordinator
+  reads `sepush.get_allowance()` (an in-memory read of the cached rate-limit headers,
+  populated by the hourly stage poll on the same client instance), falling back to a
+  free `verify_token()` only if nothing is cached yet. This removes the redundant hourly
+  quota request entirely.
+- **Token validation uses `verify_token()`** (free, unmetered Schedule `?test` request)
+  in the config and options flows, replacing the now-deprecated `check_allowance()`.
+  Each config entry has its own SePush client instance, so quota caches are isolated
+  per API key.
+
+### Fixed
+- **Quota sensor hardening** — the SePush API Quota sensor now coerces a missing/`None`
+  credit count to `0` (`int(self.data.get("count") or 0)`) instead of raising
+  `TypeError`, guarding against a `200` response that omits the `x-ratelimit-used` header.
+
+### Dependency
+- Requires `load-shedding==0.15.0`.
+
+---
 
 ## [1.6.0] - 2026-06-08
 
