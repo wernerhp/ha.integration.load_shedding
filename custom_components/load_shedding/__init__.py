@@ -37,7 +37,6 @@ from .const import (
     ATTR_EVENTS,
     ATTR_FORECAST,
     ATTR_PLANNED,
-    ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_TIME,
@@ -47,7 +46,6 @@ from .const import (
     DOMAIN,
     MANUFACTURER,
     NAME,
-    QUOTA_UPDATE_INTERVAL,
     STAGE_UPDATE_INTERVAL,
     VERSION,
 )
@@ -111,20 +109,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     if not area_coordinator.areas:
         return False
 
-    quota_coordinator = LoadSheddingQuotaCoordinator(hass, sepush)
-    quota_coordinator.update_interval = timedelta(seconds=QUOTA_UPDATE_INTERVAL)
-
     hass.data[DOMAIN][config_entry.entry_id] = {
         ATTR_STAGE: stage_coordinator,
         ATTR_AREA: area_coordinator,
-        ATTR_QUOTA: quota_coordinator,
     }
 
     config_entry.async_on_unload(config_entry.add_update_listener(update_listener))
 
     await stage_coordinator.async_config_entry_first_refresh()
     await area_coordinator.async_config_entry_first_refresh()
-    await quota_coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
     return True
@@ -577,40 +570,6 @@ def utc_dt(date: datetime, time: datetime) -> datetime:
         microsecond=0,
         tzinfo=sast,
     ).astimezone(UTC)
-
-
-class LoadSheddingQuotaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Class to manage fetching LoadShedding Quota."""
-
-    def __init__(self, hass: HomeAssistant, sepush: SePush) -> None:
-        """Initialize the quota coordinator."""
-        super().__init__(hass, _LOGGER, name=f"{DOMAIN}")
-        self.data = {}
-        self.sepush = sepush
-        self.last_update: datetime | None = None
-
-    async def _async_update_data(self) -> dict:
-        """Retrieve latest load shedding data."""
-
-        now = datetime.now(UTC).replace(microsecond=0)
-        try:
-            quota = await self.async_update_quota()
-        except SePushError as err:
-            _LOGGER.error("Unable to get quota: %s", err)
-            self.data = {}
-        except UpdateFailed as err:
-            _LOGGER.exception("Unable to get quota: %s", err)
-        else:
-            self.data = quota
-            self.last_update = now
-
-        return self.data
-
-    async def async_update_quota(self) -> dict:
-        """Retrieve latest quota."""
-        esp = await self.hass.async_add_executor_job(self.sepush.check_allowance)
-
-        return esp.get("allowance", {})
 
 
 class LoadSheddingDevice(Entity):

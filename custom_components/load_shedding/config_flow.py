@@ -120,7 +120,7 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
 
         if self.api_key:
             try:
-                # Validate the token by checking the allowance.
+                # Validate the token with a free, unmetered request.
                 sepush = SePush(
                     token=self.api_key,
                     user_agent_context={
@@ -128,7 +128,7 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                         "homeassistant": HA_VERSION,
                     },
                 )
-                await self.hass.async_add_executor_job(sepush.check_allowance)
+                await self.hass.async_add_executor_job(sepush.rate_limit, True)
             except SePushError as err:
                 status_code = err.status_code
                 if status_code == 400:
@@ -349,7 +349,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
         errors = {}
         if api_key:
             try:
-                # Validate the token by checking the allowance.
+                # Validate the token with a free, unmetered request.
                 sepush = SePush(
                     token=api_key,
                     user_agent_context={
@@ -357,7 +357,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                         "homeassistant": HA_VERSION,
                     },
                 )
-                esp = await self.hass.async_add_executor_job(sepush.check_allowance)
+                esp = await self.hass.async_add_executor_job(sepush.rate_limit, True)
                 _LOGGER.debug("Validate API Key Response: %s", esp)
             except SePushError as err:
                 status_code = err.status_code

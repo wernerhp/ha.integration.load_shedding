@@ -25,7 +25,6 @@ from custom_components.load_shedding.const import (
     ATTR_EVENTS,
     ATTR_FORECAST,
     ATTR_PLANNED,
-    ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_TIME,
@@ -55,7 +54,7 @@ async def test_setup_and_unload(
     assert entry.state is ConfigEntryState.LOADED
     assert DOMAIN in hass.data
     coordinators = hass.data[DOMAIN][entry.entry_id]
-    assert set(coordinators) == {ATTR_STAGE, ATTR_AREA, ATTR_QUOTA}
+    assert set(coordinators) == {ATTR_STAGE, ATTR_AREA}
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -344,39 +343,6 @@ async def test_area_update_handles_malformed_event_note(
 
     assert result[AREA_ID][ATTR_EVENTS][0][ATTR_STAGE] is Stage.NO_LOAD_SHEDDING
 
-
-async def test_quota_coordinator_data(
-    hass: HomeAssistant, init_integration: MockConfigEntry
-) -> None:
-    """The quota coordinator exposes the SePush allowance."""
-    entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    assert coordinator.data["count"] == 5
-    assert coordinator.data["limit"] == 50
-
-
-async def test_quota_coordinator_handles_api_error(
-    hass: HomeAssistant, init_integration: MockConfigEntry
-) -> None:
-    """The quota coordinator clears data on an API error."""
-    entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    coordinator.sepush.check_allowance.side_effect = SePushError(
-        "boom", status_code=500
-    )
-    result = await coordinator._async_update_data()
-    assert result == {}
-
-
-async def test_quota_coordinator_handles_update_failed(
-    hass: HomeAssistant, init_integration: MockConfigEntry
-) -> None:
-    """The quota coordinator keeps prior data on an unexpected update failure."""
-    entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    coordinator.sepush.check_allowance.side_effect = UpdateFailed("boom")
-    result = await coordinator._async_update_data()
-    assert result == coordinator.data
 
 
 def test_utc_dt() -> None:

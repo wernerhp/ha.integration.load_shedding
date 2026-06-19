@@ -41,7 +41,6 @@ from .const import (
     ATTR_NEXT_STAGE,
     ATTR_NEXT_START_TIME,
     ATTR_PLANNED,
-    ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_IN,
@@ -109,8 +108,6 @@ async def async_setup_entry(
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     stage_coordinator = coordinators.get(ATTR_STAGE)
     area_coordinator = coordinators.get(ATTR_AREA)
-    quota_coordinator = coordinators.get(ATTR_QUOTA)
-
     known_providers: set[str] = set()
 
     @callback
@@ -139,7 +136,10 @@ async def async_setup_entry(
         area_entity = LoadSheddingAreaSensorEntity(area_coordinator, area)
         entities.append(area_entity)
 
-    quota_entity = LoadSheddingQuotaSensorEntity(quota_coordinator)
+    # Quota sensor subscribes to the stage coordinator — the stage poll (status)
+    # populates sepush.rate_limit() as a side-effect, so no dedicated quota call
+    # is ever needed.
+    quota_entity = LoadSheddingQuotaSensorEntity(stage_coordinator)
     entities.append(quota_entity)
 
     async_add_entities(entities)
@@ -358,12 +358,17 @@ class LoadSheddingAreaSensorEntity(
 class LoadSheddingQuotaSensorEntity(
     LoadSheddingDevice, CoordinatorEntity, RestoreSensor
 ):
-    """Define a LoadShedding Quota entity."""
+    """Define a LoadShedding Quota entity.
+
+    Subscribes to the stage coordinator. When the stage poll fires (calling
+    ``sepush.status()``) the ``x-ratelimit-*`` response headers are cached on
+    ``coordinator.sepush._rate_limit``. This sensor reads that cache via
+    ``coordinator.sepush.rate_limit()`` — no additional API call is ever made.
+    """
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
         """Initialize the quota sensor."""
         super().__init__(coordinator)
-        self.data = self.coordinator.data
 
         self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} SePush Quota",
@@ -381,6 +386,17 @@ class LoadSheddingQuotaSensorEntity(
             self._attr_native_value = restored_data.native_value
         await super().async_added_to_hass()
 
+    def _quota(self) -> dict:
+        """Return the current quota snapshot (pure cache read, no I/O)."""
+        rate_limit = self.coordinator.sepush.rate_limit()
+        return {
+            "count": rate_limit.get("used") or 0,
+            "limit": rate_limit.get("limit") or 0,
+            "remaining": rate_limit.get("remaining"),
+            "reset": rate_limit.get("reset"),
+            "type": "daily",
+        }
+
     @property
     def name(self) -> str | None:
         """Return the quota sensor name."""
@@ -388,11 +404,11 @@ class LoadSheddingQuotaSensorEntity(
 
     @property
     def native_value(self) -> StateType:
-        """Return the stage state."""
-        if not self.data:
+        """Return the API credits used so far today."""
+        rate_limit = self.coordinator.sepush.rate_limit()
+        if not rate_limit:
             return self._attr_native_value
-
-        count = int(self.data.get("count", 0))
+        count = int(rate_limit.get("used") or 0)
         self._attr_native_value = cast(StateType, count)
         return self._attr_native_value
 
@@ -402,10 +418,11 @@ class LoadSheddingQuotaSensorEntity(
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
 
-        if not self.data:
+        rate_limit = self.coordinator.sepush.rate_limit()
+        if not rate_limit:
             return self._attr_extra_state_attributes
 
-        attrs = dict(self.data)
+        attrs = self._quota()
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
@@ -415,11 +432,8 @@ class LoadSheddingQuotaSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data:
-            self.data = data
-            # Explicitly get the native value to force state update
-            self._attr_native_value = self.native_value
-            self.async_write_ha_state()
+        self._attr_native_value = self.native_value
+        self.async_write_ha_state()
 
 
 def stage_forecast_to_data(stage_forecast: list) -> list:

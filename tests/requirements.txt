@@ -2,5 +2,4 @@
 # the tested logic lives in dependency-free modules: const.py, helpers.py).
 pytest>=8.0
 voluptuous>=0.13
-load_shedding==0.14.0
-
+load_shedding==0.15.0

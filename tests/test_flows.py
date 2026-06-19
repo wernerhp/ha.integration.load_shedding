@@ -90,7 +90,7 @@ async def test_user_flow_api_errors(
     expected: str,
 ) -> None:
     """API errors while validating the key surface as form errors."""
-    mock_sepush.check_allowance.side_effect = SePushError(
+    mock_sepush.rate_limit.side_effect = SePushError(
         "boom", status_code=status_code
     )
     result = await hass.config_entries.flow.async_init(

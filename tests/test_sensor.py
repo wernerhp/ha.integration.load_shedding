@@ -16,7 +16,6 @@ from custom_components.load_shedding.const import (
     ATTR_EVENTS,
     ATTR_FORECAST,
     ATTR_PLANNED,
-    ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_TIME,
@@ -114,12 +113,21 @@ async def test_area_sensor_updates_active(
 
 
 async def test_quota_sensor_updates_on_coordinator_push(
-    hass: HomeAssistant, init_integration: MockConfigEntry
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    init_integration: MockConfigEntry,
 ) -> None:
-    """Pushing new quota data updates the quota sensor state."""
+    """Pushing new stage data updates the quota sensor (reads rate_limit cache)."""
     entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    coordinator.async_set_updated_data({"count": 12, "limit": 50, "type": "daily"})
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    # Update what rate_limit() reports, then trigger a stage coordinator push.
+    mock_sepush.rate_limit.return_value = {
+        "used": 12,
+        "limit": 50,
+        "remaining": 38,
+        "reset": "2026-06-19T00:00:00+00:00",
+    }
+    coordinator.async_set_updated_data(coordinator.data)
     await hass.async_block_till_done()
 
     state = hass.states.get("sensor.load_shedding_sepush_api_quota")
