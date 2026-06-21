@@ -147,6 +147,52 @@ async def test_sepush_failure_creates_repair_issue(
     assert issue.severity is ir.IssueSeverity.ERROR
 
 
+@pytest.mark.parametrize("status_code", [500, 502, 503, 504])
+async def test_sepush_transient_failure_creates_repair_issue(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+    status_code: int,
+) -> None:
+    """A temporary server-side SePush failure raises a warning repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("server error", status_code=status_code)
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"sepush_api_failure_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.translation_key == "sepush_api_unavailable"
+
+
+async def test_sepush_unexpected_error_creates_repair_issue(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An unexpected (non-SePush) stage error is surfaced as a repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = ValueError("boom")
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"sepush_api_failure_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.translation_key == "sepush_api_unavailable"
+
+
 async def test_sepush_failure_issue_cleared_on_recovery(
     hass: HomeAssistant,
     mock_sepush: MagicMock,
@@ -343,6 +389,54 @@ async def test_area_update_handles_malformed_event_note(
 
     assert result[AREA_ID][ATTR_EVENTS][0][ATTR_STAGE] is Stage.NO_LOAD_SHEDDING
 
+
+async def test_stage_update_skips_malformed_zone(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """A malformed status entry is skipped without dropping the valid zones."""
+    entry = init_integration
+    coordinator: LoadSheddingStageCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_STAGE
+    ]
+    coordinator.sepush.status.return_value = {
+        "status": {
+            "eskom": {
+                "name": "National",
+                "stage": "2",
+                "stage_updated": None,
+                "next_stages": [],
+            },
+            "capetown": {
+                "name": "Cape Town",
+                "stage": "1",
+                "stage_updated": "2026-06-18T09:00:00+02:00",
+                "next_stages": [],
+            },
+        }
+    }
+
+    result = await coordinator.async_update_stage()
+
+    assert "eskom" not in result
+    assert "capetown" in result
+
+
+async def test_area_update_skips_malformed_schedule(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """A malformed area schedule is skipped without crashing the update."""
+    entry = init_integration
+    coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_AREA
+    ]
+    coordinator.sepush.area.return_value = {
+        "events": [],
+        "schedule": {"days": [{"date": "not-a-date", "stages": []}]},
+    }
+
+    result = await coordinator.async_update_area()
+
+    assert AREA_ID not in result
 
 
 def test_utc_dt() -> None:
