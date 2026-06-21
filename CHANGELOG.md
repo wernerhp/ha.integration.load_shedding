@@ -113,7 +113,7 @@ All notable changes to this integration will be documented in this file.
   60-second poll, burning daily quota.
 
 ### Dependency
-- Requires `load-shedding==0.14.0`.
+- Requires `load_shedding==0.14.0`.
 
 ---
 
