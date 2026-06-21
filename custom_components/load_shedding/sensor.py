@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from load_shedding.libs.sepush import SePushError
 from load_shedding.providers import Area, Stage
 
 from homeassistant.components.sensor import (
@@ -49,6 +51,8 @@ from .const import (
     DOMAIN,
     NAME,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_DATA = {
     ATTR_STAGE: Stage.NO_LOAD_SHEDDING.value,
@@ -361,9 +365,9 @@ class LoadSheddingQuotaSensorEntity(
     """Define a LoadShedding Quota entity.
 
     Subscribes to the stage coordinator. When the stage poll fires (calling
-    ``sepush.status()``) the ``x-ratelimit-*`` response headers are cached on
-    ``coordinator.sepush._rate_limit``. This sensor reads that cache via
-    ``coordinator.sepush.rate_limit()`` — no additional API call is ever made.
+    ``sepush.status()``), the SePush client caches the ``x-ratelimit-*`` response
+    headers. This sensor reads that cache via ``coordinator.sepush.rate_limit()``
+    — no additional API call is ever made.
     """
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
@@ -382,7 +386,7 @@ class LoadSheddingQuotaSensorEntity(
 
     def _quota(self) -> dict:
         """Return the current quota snapshot (pure cache read, no I/O)."""
-        rate_limit = self.coordinator.sepush.rate_limit()
+        rate_limit = self._rate_limit()
         return {
             "count": rate_limit.get("used") or 0,
             "limit": rate_limit.get("limit") or 0,
@@ -390,6 +394,18 @@ class LoadSheddingQuotaSensorEntity(
             "reset": rate_limit.get("reset"),
             "type": "daily",
         }
+
+    def _rate_limit(self) -> dict:
+        """Read the cached SePush rate-limit snapshot.
+
+        A transient API error here must not break the entity state update; the
+        outage itself is surfaced as a Repairs issue by the stage coordinator.
+        """
+        try:
+            return self.coordinator.sepush.rate_limit() or {}
+        except SePushError as err:
+            _LOGGER.debug("Unable to read SePush quota: %s", err)
+            return {}
 
     @property
     def name(self) -> str | None:
@@ -399,7 +415,7 @@ class LoadSheddingQuotaSensorEntity(
     @property
     def native_value(self) -> StateType:
         """Return the API credits used so far today."""
-        rate_limit = self.coordinator.sepush.rate_limit()
+        rate_limit = self._rate_limit()
         if not rate_limit:
             return self._attr_native_value
         count = int(rate_limit.get("used") or 0)
@@ -412,7 +428,7 @@ class LoadSheddingQuotaSensorEntity(
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
 
-        rate_limit = self.coordinator.sepush.rate_limit()
+        rate_limit = self._rate_limit()
         if not rate_limit:
             return self._attr_extra_state_attributes
 

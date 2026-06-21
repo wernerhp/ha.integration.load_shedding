@@ -134,6 +134,22 @@ async def test_quota_sensor_updates_on_coordinator_push(
     assert state.state == "12"
 
 
+async def test_quota_sensor_survives_rate_limit_error(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    init_integration: MockConfigEntry,
+) -> None:
+    """A transient rate_limit() error keeps the quota sensor's last value."""
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    mock_sepush.rate_limit.side_effect = SePushError("boom", status_code=500)
+    coordinator.async_set_updated_data(coordinator.data)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.load_shedding_sepush_api_quota")
+    assert state.state == "5"
+
+
 def test_get_sensor_attrs_no_forecast() -> None:
     """With no forecast only the stage attribute is returned."""
     attrs = get_sensor_attrs([], Stage.STAGE_3)

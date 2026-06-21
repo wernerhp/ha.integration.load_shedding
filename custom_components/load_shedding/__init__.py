@@ -27,7 +27,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import DeviceInfo, Entity
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     API,
@@ -53,6 +53,10 @@ from .helpers import should_refresh
 
 _LOGGER = logging.getLogger(__name__)
 
+# Appended to diagnostic logs so user-submitted logs identify the integration
+# and Home Assistant versions without us having to ask.
+DIAG_CONTEXT = f"[load_shedding {VERSION}, Home Assistant {HA_VERSION}]"
+
 PLATFORMS = [Platform.CALENDAR, Platform.SENSOR]
 
 
@@ -63,6 +67,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up LoadShedding as config entry."""
+    _LOGGER.debug("Setting up Load Shedding %s", DIAG_CONTEXT)
     if not hass.data.get(DOMAIN):
         hass.data.setdefault(DOMAIN, {})
 
@@ -76,6 +81,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
             },
         )
     if not sepush:
+        _LOGGER.error(
+            "Cannot set up Load Shedding: no SePush API key configured. "
+            "Add a token under the integration options"
+        )
         return False
 
     # Clear any stale invalid-area-id repair issue if all configured areas are now valid.
@@ -107,6 +116,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         )
         area_coordinator.add_area(area)
     if not area_coordinator.areas:
+        _LOGGER.error(
+            "Cannot set up Load Shedding: no areas configured. "
+            "Add at least one area under the integration options"
+        )
         return False
 
     hass.data[DOMAIN][config_entry.entry_id] = {
@@ -226,14 +239,18 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             stage = await self.async_update_stage()
         except SePushError as err:
-            _LOGGER.error("Unable to get stage: %s", err)
+            _LOGGER.error("Unable to get stage: %s %s", err, DIAG_CONTEXT)
             if err.status_code in (400, 403, 429):
                 # Back off on permanent/auth/quota failures to avoid retry spam.
                 self.last_update = now
-                self._create_sepush_issue(err)
+            self._create_sepush_issue(err)
             self.data = {}
-        except UpdateFailed as err:
-            _LOGGER.exception("Unable to get stage: %s", err)
+        except Exception as err:  # noqa: BLE001
+            # Covers UpdateFailed and any unexpected error (e.g. a malformed
+            # status payload). The failure is logged and surfaced as a Repairs
+            # issue rather than silently swallowed.
+            _LOGGER.exception("Unexpected error fetching stage %s", DIAG_CONTEXT)
+            self._create_sepush_issue(err)
             self.data = {}
         else:
             self.data = stage
@@ -252,44 +269,53 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data = {}
         statuses = esp.get("status", {})
         for idx, area in statuses.items():
-            stage = Stage(int(area.get("stage", "0")))
-            start_time = datetime.fromisoformat(area.get("stage_updated"))
-            start_time = start_time.replace(second=0, microsecond=0)
-            planned = [
-                {
-                    ATTR_STAGE: stage,
-                    ATTR_START_TIME: start_time.astimezone(UTC),
-                }
-            ]
-
-            next_stages = area.get("next_stages", [])
-            for i, next_stage in enumerate(next_stages):
-                # Prev
-                prev_end = datetime.fromisoformat(
-                    next_stage.get("stage_start_timestamp")
-                )
-                prev_end = prev_end.replace(second=0, microsecond=0)
-                planned[i][ATTR_END_TIME] = prev_end.astimezone(UTC)
-
-                # Next
-                stage = Stage(int(next_stage.get("stage", "0")))
-                start_time = datetime.fromisoformat(
-                    next_stage.get("stage_start_timestamp")
-                )
+            try:
+                stage = Stage(int(area.get("stage", "0")))
+                start_time = datetime.fromisoformat(area.get("stage_updated"))
                 start_time = start_time.replace(second=0, microsecond=0)
-                planned.append(
+                planned = [
                     {
                         ATTR_STAGE: stage,
                         ATTR_START_TIME: start_time.astimezone(UTC),
                     }
-                )
+                ]
 
-            filtered = []
-            for stage in planned:
-                if ATTR_END_TIME not in stage:
-                    stage[ATTR_END_TIME] = stage[ATTR_START_TIME] + timedelta(days=7)
-                if ATTR_END_TIME in stage and stage.get(ATTR_END_TIME) >= now:
-                    filtered.append(stage)
+                next_stages = area.get("next_stages", [])
+                for i, next_stage in enumerate(next_stages):
+                    # Prev
+                    prev_end = datetime.fromisoformat(
+                        next_stage.get("stage_start_timestamp")
+                    )
+                    prev_end = prev_end.replace(second=0, microsecond=0)
+                    planned[i][ATTR_END_TIME] = prev_end.astimezone(UTC)
+
+                    # Next
+                    stage = Stage(int(next_stage.get("stage", "0")))
+                    start_time = datetime.fromisoformat(
+                        next_stage.get("stage_start_timestamp")
+                    )
+                    start_time = start_time.replace(second=0, microsecond=0)
+                    planned.append(
+                        {
+                            ATTR_STAGE: stage,
+                            ATTR_START_TIME: start_time.astimezone(UTC),
+                        }
+                    )
+
+                filtered = []
+                for stage in planned:
+                    if ATTR_END_TIME not in stage:
+                        stage[ATTR_END_TIME] = stage[ATTR_START_TIME] + timedelta(
+                            days=7
+                        )
+                    if ATTR_END_TIME in stage and stage.get(ATTR_END_TIME) >= now:
+                        filtered.append(stage)
+            except (ValueError, TypeError, KeyError, AttributeError):
+                # A malformed entry for one zone must not abort the others.
+                _LOGGER.exception(
+                    "Unable to parse stage status for '%s' %s", idx, DIAG_CONTEXT
+                )
+                continue
 
             data[idx] = {
                 ATTR_NAME: area.get("name", ""),
@@ -298,15 +324,29 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return data
 
-    def _create_sepush_issue(self, err: SePushError) -> None:
-        """Surface an auth/quota SePush API failure as a Repairs issue."""
+    def _create_sepush_issue(self, err: Exception) -> None:
+        """Surface a failed SePush API poll as a Repairs issue.
+
+        Auth/quota/client errors (400/403/429) are user-actionable, so they are
+        raised as errors pointing at the token/quota. Any other failure (5xx,
+        network problems, timeouts, malformed payloads) is treated as a
+        temporary API outage and raised as a warning. Both share one issue id so
+        only a single repair is shown at a time, and it clears on recovery.
+        """
+        status = getattr(err, "status_code", None)
+        if status in (400, 403, 429):
+            translation_key = "sepush_api_failure"
+            severity = ir.IssueSeverity.ERROR
+        else:
+            translation_key = "sepush_api_unavailable"
+            severity = ir.IssueSeverity.WARNING
         ir.async_create_issue(
             self.hass,
             DOMAIN,
             f"sepush_api_failure_{self._entry_id}",
             is_fixable=False,
-            severity=ir.IssueSeverity.ERROR,
-            translation_key="sepush_api_failure",
+            severity=severity,
+            translation_key=translation_key,
             translation_placeholders={"error": str(err)},
             learn_more_url=(
                 "https://github.com/wernerhp/ha_integration_load_shedding/issues"
@@ -349,11 +389,14 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             area = await self.async_update_area()
         except SePushError as err:
-            _LOGGER.error("Unable to get area schedule: %s", err)
-            self.data = {}
-        except UpdateFailed as err:
-            _LOGGER.exception("Unable to get area schedule: %s", err)
-            self.data = {}
+            # Keep the previously-fetched schedules rather than wiping them on a
+            # transient failure. API health is surfaced as a Repairs issue by the
+            # stage coordinator, which polls the same token.
+            _LOGGER.error("Unable to get area schedule: %s %s", err, DIAG_CONTEXT)
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception(
+                "Unexpected error fetching area schedule %s", DIAG_CONTEXT
+            )
         else:
             # Merge so areas that failed to fetch this cycle keep their previous
             # schedule instead of disappearing until the next update interval.
@@ -380,66 +423,80 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if err.status_code == 400 and "-" in area.id:
                     _LOGGER.warning(
                         "Area '%s' (%s) has a legacy v2 area ID (contains '-'). "
-                        "It will be skipped until re-added with a valid v3 ID.",
+                        "It will be skipped until re-added with a valid v3 ID. %s",
                         area.name,
                         area.id,
+                        DIAG_CONTEXT,
                     )
                     self._invalid_area_ids.add(area.id)
                     self._create_invalid_area_issue()
                 else:
                     _LOGGER.error(
-                        "Unable to get schedule for area '%s' (%s): %s",
+                        "Unable to get schedule for area '%s' (%s): %s %s",
                         area.name,
                         area.id,
                         err,
+                        DIAG_CONTEXT,
                     )
                 continue
 
-            # Get events for area
-            events = []
-            for event in esp.get("events", {}):
-                note = event.get("note")
-                parts = str(note).split(" ")
-                try:
-                    stage = Stage(int(parts[1]))
-                except (ValueError, IndexError):
-                    stage = Stage.NO_LOAD_SHEDDING
-                    if note == str(Stage.LOAD_REDUCTION):
-                        stage = Stage.LOAD_REDUCTION
+            try:
+                # Get events for area
+                events = []
+                for event in esp.get("events", {}):
+                    note = event.get("note")
+                    parts = str(note).split(" ")
+                    try:
+                        stage = Stage(int(parts[1]))
+                    except (ValueError, IndexError):
+                        stage = Stage.NO_LOAD_SHEDDING
+                        if note == str(Stage.LOAD_REDUCTION):
+                            stage = Stage.LOAD_REDUCTION
 
-                start = datetime.fromisoformat(event.get("start")).astimezone(UTC)
-                end = datetime.fromisoformat(event.get("end")).astimezone(UTC)
+                    start = datetime.fromisoformat(event.get("start")).astimezone(UTC)
+                    end = datetime.fromisoformat(event.get("end")).astimezone(UTC)
 
-                events.append(
-                    {
-                        ATTR_STAGE: stage,
-                        ATTR_START_TIME: start,
-                        ATTR_END_TIME: end,
-                    }
+                    events.append(
+                        {
+                            ATTR_STAGE: stage,
+                            ATTR_START_TIME: start,
+                            ATTR_END_TIME: end,
+                        }
+                    )
+
+                # Get schedule for area
+                stage_schedule = {}
+                for day in esp.get("schedule", {}).get("days", []):
+                    date = datetime.strptime(day.get("date"), "%Y-%m-%d")
+                    stage_timeslots = day.get("stages", [])
+                    for i, timeslots in enumerate(stage_timeslots):
+                        stage = Stage(i + 1)
+                        if stage not in stage_schedule:
+                            stage_schedule[stage] = []
+                        for timeslot in timeslots:
+                            start_str, end_str = timeslot.strip().split("-")
+                            start = utc_dt(date, datetime.strptime(start_str, "%H:%M"))
+                            end = utc_dt(date, datetime.strptime(end_str, "%H:%M"))
+                            if end < start:
+                                end = end + timedelta(days=1)
+                            stage_schedule[stage].append(
+                                {
+                                    ATTR_STAGE: stage,
+                                    ATTR_START_TIME: start,
+                                    ATTR_END_TIME: end,
+                                }
+                            )
+            except (ValueError, TypeError, KeyError, AttributeError):
+                # A malformed payload for one area must not abort the others.
+                # Log the offending area and full traceback, then skip it; its
+                # previous schedule is preserved by the coordinator merge.
+                _LOGGER.exception(
+                    "Unable to parse schedule for area '%s' (%s) %s",
+                    area.name,
+                    area.id,
+                    DIAG_CONTEXT,
                 )
-
-            # Get schedule for area
-            stage_schedule = {}
-            for day in esp.get("schedule", {}).get("days", []):
-                date = datetime.strptime(day.get("date"), "%Y-%m-%d")
-                stage_timeslots = day.get("stages", [])
-                for i, timeslots in enumerate(stage_timeslots):
-                    stage = Stage(i + 1)
-                    if stage not in stage_schedule:
-                        stage_schedule[stage] = []
-                    for timeslot in timeslots:
-                        start_str, end_str = timeslot.strip().split("-")
-                        start = utc_dt(date, datetime.strptime(start_str, "%H:%M"))
-                        end = utc_dt(date, datetime.strptime(end_str, "%H:%M"))
-                        if end < start:
-                            end = end + timedelta(days=1)
-                        stage_schedule[stage].append(
-                            {
-                                ATTR_STAGE: stage,
-                                ATTR_START_TIME: start,
-                                ATTR_END_TIME: end,
-                            }
-                        )
+                continue
 
             area_id_data[area.id] = {
                 ATTR_EVENTS: events,

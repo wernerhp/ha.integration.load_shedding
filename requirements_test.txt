@@ -1,3 +1,3 @@
 pytest-homeassistant-custom-component
 pytest-cov
-load_shedding==0.14.0
+load_shedding==0.15.1
