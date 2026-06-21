@@ -4,7 +4,7 @@
   "config_flow": true,
   "documentation": "https://github.com/wernerhp/ha_integration_load_shedding/blob/master/README.md",
   "issue_tracker": "https://github.com/wernerhp/ha_integration_load_shedding/issues",
-  "requirements": ["load_shedding==0.14.0"],
+  "requirements": ["load_shedding==0.15.1"],
   "ssdp": [],
   "zeroconf": [],
   "homekit": {},
