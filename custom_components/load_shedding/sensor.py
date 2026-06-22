@@ -329,6 +329,12 @@ class LoadSheddingQuotaSensorEntity(
         self._attr_unique_id = f"{self.coordinator.config_entry.entry_id}_se_push_quota"
         self.entity_id = f"{SENSOR_DOMAIN}.{DOMAIN}_sepush_api_quota"
 
+    async def async_added_to_hass(self) -> None:
+        """Handle entity which will be added."""
+        if restored_data := await self.async_get_last_sensor_data():
+            self._attr_native_value = restored_data.native_value
+        await super().async_added_to_hass()
+
     @property
     def name(self) -> str | None:
         """Return the quota sensor name."""
