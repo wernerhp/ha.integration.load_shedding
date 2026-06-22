@@ -552,6 +552,66 @@ async def test_stage_coordinator_cache_skips_api_on_restart(
     mock_sepush.status.assert_not_called()
 
 
+async def test_stage_coordinator_reseeds_rate_limit_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The persisted rate-limit snapshot reseeds sepush._rate_limit on restart.
+
+    On the #116 restart path the status() poll is skipped, so without reseeding
+    the SePush cache would be empty. The cached snapshot must be written back to
+    sepush._rate_limit so the quota sensor reads it without a blocking refresh.
+    """
+    freezer.move_to(FROZEN_TIME)
+    frozen_now = datetime.fromisoformat(FROZEN_TIME)
+    cache_time = frozen_now - timedelta(seconds=1)
+    persisted_rate_limit = {
+        "used": 9,
+        "limit": 50,
+        "remaining": 41,
+        "reset": "2026-06-19T00:00:00+00:00",
+    }
+    # Empty the live cache so only a successful reseed can repopulate it.
+    mock_sepush._rate_limit = {}
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+
+    store_data = {
+        "last_update": cache_time.isoformat(),
+        "data": _serialize_stage_data(
+            {
+                "eskom": {
+                    "name": "National",
+                    ATTR_PLANNED: [
+                        {
+                            ATTR_STAGE: Stage.STAGE_2,
+                            ATTR_START_TIME: frozen_now - timedelta(hours=1),
+                            ATTR_END_TIME: frozen_now + timedelta(hours=1),
+                        }
+                    ],
+                }
+            }
+        ),
+        "rate_limit": persisted_rate_limit,
+    }
+
+    async def _fake_load():
+        return store_data
+
+    with patch.object(Store, "async_load", side_effect=_fake_load):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The skipped poll left the live cache untouched, so the persisted snapshot
+    # must have reseeded it without any rate_limit() refresh call.
+    assert mock_sepush._rate_limit == persisted_rate_limit
+    state = hass.states.get("sensor.load_shedding_sepush_api_quota")
+    assert state is not None
+    assert state.state == "9"
+
+
 async def test_area_coordinator_cache_skips_api_on_restart(
     hass: HomeAssistant,
     mock_sepush: MagicMock,
@@ -627,6 +687,7 @@ async def test_stage_coordinator_saves_cache_after_successful_poll(
     assert saved, "Store.async_save was never called after a successful API poll"
     assert "last_update" in saved[0]
     assert "data" in saved[0]
+    assert "rate_limit" in saved[0]
 
 
 async def test_area_coordinator_saves_cache_after_successful_poll(

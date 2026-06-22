@@ -364,6 +364,11 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         with contextlib.suppress(Exception):
             self.last_update = datetime.fromisoformat(stored["last_update"])
             self.data = _deserialize_stage_data(stored.get("data", {}))
+            # Seed the SePush rate-limit cache so the quota sensor reads the
+            # persisted quota on restart without a blocking refresh, the same
+            # way the stage/area data is restored to skip the API (#116).
+            if rate_limit := stored.get("rate_limit"):
+                self.sepush._rate_limit = rate_limit
             _LOGGER.debug(
                 "Restored stage cache (last_update=%s) %s", self.last_update, DIAG_CONTEXT
             )
@@ -374,6 +379,9 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             {
                 "last_update": self.last_update.isoformat() if self.last_update else None,
                 "data": _serialize_stage_data(self.data),
+                # Persist the quota snapshot primed by the status() poll so it
+                # can reseed sepush._rate_limit on the next restart.
+                "rate_limit": dict(getattr(self.sepush, "_rate_limit", None) or {}),
             }
         )
 

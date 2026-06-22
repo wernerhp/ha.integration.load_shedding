@@ -118,9 +118,10 @@ def build_sepush_mock() -> MagicMock:
     sepush.status.return_value = STATUS_DATA
     sepush.area.return_value = AREA_DATA
     sepush.check_allowance.return_value = ALLOWANCE_DATA
-    sepush.rate_limit.return_value = RATE_LIMIT_DATA
-    # Primed in-memory cache the quota sensor reads without triggering I/O.
-    sepush._rate_limit = RATE_LIMIT_DATA
+    # Mirror the real client: rate_limit() returns a copy of the in-memory
+    # _rate_limit cache (primed from response headers) and never does I/O.
+    sepush._rate_limit = dict(RATE_LIMIT_DATA)
+    sepush.rate_limit.side_effect = lambda refresh=False: dict(sepush._rate_limit)
     return sepush
 
 

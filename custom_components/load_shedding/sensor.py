@@ -97,9 +97,9 @@ RESTORABLE_ATTRS = (
     ATTR_AREA_ID,
 )
 
-# Quota attributes restored after a restart so count/limit/remaining survive a
-# reboot that skips the API call (e.g. the #116 restart cache leaves
-# sepush.rate_limit() empty) until the first live poll repopulates them.
+# Quota attributes restored after a restart as a fallback for when the #116
+# restart cache has no persisted rate-limit snapshot to reseed (e.g. a fresh or
+# corrupt cache), so count/limit/remaining survive until the first live poll.
 QUOTA_RESTORABLE_ATTRS = (
     "count",
     "limit",
@@ -378,10 +378,11 @@ class LoadSheddingQuotaSensorEntity(
 
     Subscribes to the stage coordinator. When the stage poll fires (calling
     ``sepush.status()`` in an executor), the SePush client caches the
-    ``x-ratelimit-*`` response headers. This sensor reads that primed cache via
-    ``coordinator.sepush._rate_limit`` — it never calls ``rate_limit()`` while
-    the cache is empty, because that would issue a blocking network request
-    inside the event loop.
+    ``x-ratelimit-*`` response headers. On restart the persisted #116 cache
+    reseeds that same ``sepush._rate_limit`` snapshot, so the value is available
+    even when the poll is skipped. This sensor reads the primed cache and never
+    calls ``rate_limit()`` while it is empty, because that would issue a
+    blocking network request inside the event loop.
     """
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
@@ -402,9 +403,9 @@ class LoadSheddingQuotaSensorEntity(
         """Handle entity which will be added."""
         if restored_data := await self.async_get_last_sensor_data():
             self._attr_native_value = restored_data.native_value
-        # Restore the last known quota attributes so count/limit/remaining
-        # survive a restart that skips the API call (#116 restart cache), until
-        # the first live poll repopulates them from sepush.rate_limit().
+        # Fallback for when the #116 cache has no persisted rate-limit snapshot
+        # to reseed: restore the last known quota attributes so count/limit/
+        # remaining survive until the first live poll repopulates them.
         if attrs := restorable_attrs(
             await self.async_get_last_state(), QUOTA_RESTORABLE_ATTRS
         ):
@@ -429,11 +430,11 @@ class LoadSheddingQuotaSensorEntity(
         """Read the cached SePush rate-limit snapshot without blocking I/O.
 
         ``sepush.rate_limit()`` makes a blocking network request to prime its
-        cache when it is empty (e.g. on the #116 restart path, where the stage
-        poll is skipped so nothing has populated the cache yet). Reading it from
-        a sync entity property would then block the event loop, so only return
-        the snapshot once the stage coordinator's executor-run poll has primed
-        it; until then the restored attributes stand in.
+        cache when it is empty. On restart the persisted #116 cache reseeds the
+        snapshot, and a live status() poll primes it otherwise; until either has
+        happened the cache may still be empty (e.g. a fresh install), so guard
+        against calling ``rate_limit()`` then and let the restored attributes
+        stand in rather than blocking the event loop.
         """
         sepush = self.coordinator.sepush
         if not getattr(sepush, "_rate_limit", None):

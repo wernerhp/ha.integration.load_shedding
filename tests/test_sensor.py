@@ -123,8 +123,8 @@ async def test_quota_sensor_updates_on_coordinator_push(
     """Pushing new stage data updates the quota sensor (reads rate_limit cache)."""
     entry = init_integration
     coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
-    # Update what rate_limit() reports, then trigger a stage coordinator push.
-    mock_sepush.rate_limit.return_value = {
+    # Update the cached rate-limit snapshot, then trigger a stage coordinator push.
+    mock_sepush._rate_limit = {
         "used": 12,
         "limit": 50,
         "remaining": 38,
