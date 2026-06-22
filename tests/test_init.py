@@ -1,7 +1,7 @@
 """Tests for the Load Shedding integration setup, unload and coordinators."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from load_shedding.libs.sepush import SePushError
@@ -12,15 +12,21 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_NAME, CONF_API_KEY, CONF_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.load_shedding import (
     LoadSheddingAreaCoordinator,
     LoadSheddingStageCoordinator,
+    _deserialize_area_data,
+    _deserialize_stage_data,
+    _serialize_area_data,
+    _serialize_stage_data,
     async_migrate_entry,
     utc_dt,
 )
 from custom_components.load_shedding.const import (
+    AREA_UPDATE_INTERVAL,
     ATTR_AREA,
     ATTR_EVENTS,
     ATTR_FORECAST,
@@ -445,6 +451,202 @@ def test_utc_dt() -> None:
     time = datetime(1900, 1, 1, 20, 0)
     result = utc_dt(date, time)
     assert result == datetime(2026, 6, 18, 18, 0, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------------------
+# Cache serialisation round-trip tests (#116)
+# ---------------------------------------------------------------------------
+
+
+def test_stage_cache_round_trip() -> None:
+    """Stage coordinator data serialises to JSON and back without data loss."""
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+    data = {
+        "eskom": {
+            "name": "National",
+            ATTR_PLANNED: [
+                {
+                    ATTR_STAGE: Stage.STAGE_2,
+                    ATTR_START_TIME: now,
+                    ATTR_END_TIME: now + timedelta(hours=2),
+                },
+            ],
+        },
+    }
+    assert _deserialize_stage_data(_serialize_stage_data(data)) == data
+
+
+def test_area_cache_round_trip() -> None:
+    """Area coordinator data serialises to JSON and back without data loss."""
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+    data = {
+        "za_gt_tsh_garsfontein_gaev": {
+            ATTR_EVENTS: [
+                {
+                    ATTR_STAGE: Stage.STAGE_2,
+                    ATTR_START_TIME: now,
+                    ATTR_END_TIME: now + timedelta(hours=2),
+                },
+            ],
+            ATTR_SCHEDULE: {
+                Stage.STAGE_2: [
+                    {
+                        ATTR_STAGE: Stage.STAGE_2,
+                        ATTR_START_TIME: now,
+                        ATTR_END_TIME: now + timedelta(hours=2),
+                    },
+                ],
+            },
+        },
+    }
+    assert _deserialize_area_data(_serialize_area_data(data)) == data
+
+
+async def test_stage_coordinator_cache_skips_api_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage coordinator does not call the API when a fresh cache is loaded on restart.
+
+    Simulates the scenario described in issue #116: the cache is pre-seeded with
+    a last_update that is still within STAGE_UPDATE_INTERVAL, so the first
+    refresh must return the cached data without hitting SePush.
+    """
+    freezer.move_to(FROZEN_TIME)
+    frozen_now = datetime.fromisoformat(FROZEN_TIME)
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+
+    # Pre-populate the coordinator's store so async_load_cache restores it.
+    store_data = {
+        "last_update": frozen_now.isoformat(),
+        "data": _serialize_stage_data(
+            {
+                "eskom": {
+                    "name": "National",
+                    ATTR_PLANNED: [
+                        {
+                            ATTR_STAGE: Stage.STAGE_2,
+                            ATTR_START_TIME: frozen_now - timedelta(hours=1),
+                            ATTR_END_TIME: frozen_now + timedelta(hours=1),
+                        }
+                    ],
+                }
+            }
+        ),
+    }
+
+    async def _fake_load():
+        return store_data
+
+    with patch.object(Store, "async_load", side_effect=_fake_load):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The API should not have been called for stage — cache was fresh.
+    mock_sepush.status.assert_not_called()
+
+
+async def test_area_coordinator_cache_skips_api_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Area coordinator does not call the API when a fresh cache is loaded on restart.
+
+    Simulates the scenario described in issue #116: the area schedule is valid
+    for 24 h so it must never be re-fetched on a restart that occurs within that
+    window.
+    """
+    freezer.move_to(FROZEN_TIME)
+    frozen_now = datetime.fromisoformat(FROZEN_TIME)
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+
+    area_store_data = {
+        "last_update": frozen_now.isoformat(),
+        "data": _serialize_area_data(
+            {
+                AREA_ID: {
+                    ATTR_EVENTS: [],
+                    ATTR_SCHEDULE: {
+                        Stage.STAGE_2: [
+                            {
+                                ATTR_STAGE: Stage.STAGE_2,
+                                ATTR_START_TIME: frozen_now + timedelta(hours=12),
+                                ATTR_END_TIME: frozen_now + timedelta(hours=14),
+                            }
+                        ]
+                    },
+                }
+            }
+        ),
+    }
+
+    async def _fake_load():
+        return area_store_data
+
+    with patch.object(Store, "async_load", side_effect=_fake_load):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Area API must not have been called — cache was fresh.
+    mock_sepush.area.assert_not_called()
+
+
+async def test_stage_coordinator_saves_cache_after_successful_poll(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage coordinator persists data after a successful API poll."""
+    entry = init_integration
+    coordinator: LoadSheddingStageCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_STAGE
+    ]
+    saved: list[dict] = []
+
+    async def _capture(data):
+        saved.append(data)
+
+    coordinator._store.async_save = _capture  # type: ignore[method-assign]
+
+    coordinator.last_update = None  # Force a refresh on next call.
+    freezer.tick(timedelta(seconds=STAGE_UPDATE_INTERVAL + 1))
+    await coordinator._async_update_data()
+
+    assert saved, "Store.async_save was never called after a successful API poll"
+    assert "last_update" in saved[0]
+    assert "data" in saved[0]
+
+
+async def test_area_coordinator_saves_cache_after_successful_poll(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Area coordinator persists data after a successful API poll."""
+    entry = init_integration
+    coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_AREA
+    ]
+    saved: list[dict] = []
+
+    async def _capture(data):
+        saved.append(data)
+
+    coordinator._store.async_save = _capture  # type: ignore[method-assign]
+
+    coordinator.last_update = None  # Force a refresh on next call.
+    freezer.tick(timedelta(seconds=AREA_UPDATE_INTERVAL + 1))
+    await coordinator._async_update_data()
+
+    assert saved, "Store.async_save was never called after a successful API poll"
+    assert "last_update" in saved[0]
+    assert "data" in saved[0]
 
 
 @pytest.mark.parametrize(
