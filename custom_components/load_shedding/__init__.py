@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime, timedelta, timezone
 import logging
 from typing import Any
@@ -26,6 +27,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import DeviceInfo, Entity
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -58,6 +60,104 @@ _LOGGER = logging.getLogger(__name__)
 DIAG_CONTEXT = f"[load_shedding {VERSION}, Home Assistant {HA_VERSION}]"
 
 PLATFORMS = [Platform.CALENDAR, Platform.SENSOR]
+
+_STORE_VERSION = 1
+
+
+# ---------------------------------------------------------------------------
+# Coordinator cache serialisation helpers
+# ---------------------------------------------------------------------------
+# Stage and area coordinator data contains Stage enums and datetime objects
+# that must be flattened to JSON-safe primitives before writing to Store and
+# re-inflated after loading.  Deserialization failures are suppressed in the
+# callers so a corrupt/incompatible cache silently falls back to a live poll.
+
+
+def _serialize_stage_data(data: dict) -> dict:
+    result: dict = {}
+    for zone_id, zone_data in data.items():
+        planned = [
+            {
+                ATTR_STAGE: slot[ATTR_STAGE].value,
+                ATTR_START_TIME: slot[ATTR_START_TIME].isoformat(),
+                ATTR_END_TIME: slot[ATTR_END_TIME].isoformat(),
+            }
+            for slot in zone_data.get(ATTR_PLANNED, [])
+        ]
+        result[zone_id] = {ATTR_NAME: zone_data.get(ATTR_NAME, ""), ATTR_PLANNED: planned}
+    return result
+
+
+def _deserialize_stage_data(stored: dict) -> dict:
+    result: dict = {}
+    for zone_id, zone_data in stored.items():
+        planned = [
+            {
+                ATTR_STAGE: Stage(int(slot[ATTR_STAGE])),
+                ATTR_START_TIME: datetime.fromisoformat(slot[ATTR_START_TIME]),
+                ATTR_END_TIME: datetime.fromisoformat(slot[ATTR_END_TIME]),
+            }
+            for slot in zone_data.get(ATTR_PLANNED, [])
+        ]
+        result[zone_id] = {ATTR_NAME: zone_data.get(ATTR_NAME, ""), ATTR_PLANNED: planned}
+    return result
+
+
+def _serialize_area_data(data: dict) -> dict:
+    # Only events + schedule are persisted; forecast is derived and recomputed.
+    result: dict = {}
+    for area_id, area_data in data.items():
+        events = [
+            {
+                ATTR_STAGE: s[ATTR_STAGE].value,
+                ATTR_START_TIME: s[ATTR_START_TIME].isoformat(),
+                ATTR_END_TIME: s[ATTR_END_TIME].isoformat(),
+            }
+            for s in area_data.get(ATTR_EVENTS, [])
+        ]
+        schedule: dict[str, list] = {}
+        for stage, slots in area_data.get(ATTR_SCHEDULE, {}).items():
+            schedule[str(stage.value)] = [
+                {
+                    ATTR_STAGE: s[ATTR_STAGE].value,
+                    ATTR_START_TIME: s[ATTR_START_TIME].isoformat(),
+                    ATTR_END_TIME: s[ATTR_END_TIME].isoformat(),
+                }
+                for s in slots
+            ]
+        result[area_id] = {ATTR_EVENTS: events, ATTR_SCHEDULE: schedule}
+    return result
+
+
+def _deserialize_area_data(stored: dict) -> dict:
+    result: dict = {}
+    for area_id, area_data in stored.items():
+        events = [
+            {
+                ATTR_STAGE: Stage(int(s[ATTR_STAGE])),
+                ATTR_START_TIME: datetime.fromisoformat(s[ATTR_START_TIME]),
+                ATTR_END_TIME: datetime.fromisoformat(s[ATTR_END_TIME]),
+            }
+            for s in area_data.get(ATTR_EVENTS, [])
+        ]
+        schedule: dict[Stage, list] = {}
+        for stage_val, slots in area_data.get(ATTR_SCHEDULE, {}).items():
+            stage = Stage(int(stage_val))
+            schedule[stage] = [
+                {
+                    ATTR_STAGE: Stage(int(s[ATTR_STAGE])),
+                    ATTR_START_TIME: datetime.fromisoformat(s[ATTR_START_TIME]),
+                    ATTR_END_TIME: datetime.fromisoformat(s[ATTR_END_TIME]),
+                }
+                for s in slots
+            ]
+        result[area_id] = {ATTR_EVENTS: events, ATTR_SCHEDULE: schedule}
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Integration setup / teardown
+# ---------------------------------------------------------------------------
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -129,6 +229,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     config_entry.async_on_unload(config_entry.add_update_listener(update_listener))
 
+    # Restore persisted timestamps and data so the first refresh skips the
+    # SePush API when the cached values are still within the update interval.
+    # This prevents quota exhaustion on every HA restart (#116).
+    await stage_coordinator.async_load_cache()
+    await area_coordinator.async_load_cache()
+
     await stage_coordinator.async_config_entry_first_refresh()
     await area_coordinator.async_config_entry_first_refresh()
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
@@ -142,6 +248,14 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         config_entry, PLATFORMS
     )
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    """Remove Load Shedding config entry and wipe persisted coordinator caches."""
+    for kind in ("stage", "area"):
+        await Store(
+            hass, version=_STORE_VERSION, key=f"{DOMAIN}.{kind}.{config_entry.entry_id}"
+        ).async_remove()
 
 
 async def async_reload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
@@ -216,6 +330,11 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     return True
 
 
+# ---------------------------------------------------------------------------
+# Coordinators
+# ---------------------------------------------------------------------------
+
+
 class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching LoadShedding Stage."""
 
@@ -228,6 +347,35 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.sepush = sepush
         self.last_update: datetime | None = None
         self._entry_id = entry_id
+        self._store: Store = Store(
+            hass, version=_STORE_VERSION, key=f"{DOMAIN}.stage.{entry_id}"
+        )
+
+    async def async_load_cache(self) -> None:
+        """Pre-seed last_update and data from persistent storage.
+
+        When the cache is fresh (within STAGE_UPDATE_INTERVAL), the first call
+        to _async_update_data will return the cached data without hitting the
+        SePush API, preventing quota exhaustion on every HA restart (#116).
+        """
+        stored = await self._store.async_load()
+        if not stored:
+            return
+        with contextlib.suppress(Exception):
+            self.last_update = datetime.fromisoformat(stored["last_update"])
+            self.data = _deserialize_stage_data(stored.get("data", {}))
+            _LOGGER.debug(
+                "Restored stage cache (last_update=%s) %s", self.last_update, DIAG_CONTEXT
+            )
+
+    async def _save_cache(self) -> None:
+        """Persist last_update and data after a successful API poll."""
+        await self._store.async_save(
+            {
+                "last_update": self.last_update.isoformat() if self.last_update else None,
+                "data": _serialize_stage_data(self.data),
+            }
+        )
 
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
@@ -255,6 +403,7 @@ class LoadSheddingStageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self.data = stage
             self.last_update = now
+            await self._save_cache()
             ir.async_delete_issue(
                 self.hass, DOMAIN, f"sepush_api_failure_{self._entry_id}"
             )
@@ -373,10 +522,40 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.stage_coordinator = stage_coordinator
         self._entry_id = entry_id
         self._invalid_area_ids: set[str] = set()
+        self._store: Store = Store(
+            hass, version=_STORE_VERSION, key=f"{DOMAIN}.area.{entry_id}"
+        )
 
     def add_area(self, area: Area = None) -> None:
         """Add a area to update."""
         self.areas.append(area)
+
+    async def async_load_cache(self) -> None:
+        """Pre-seed last_update and data from persistent storage.
+
+        When the cache is fresh (within AREA_UPDATE_INTERVAL), the first call
+        to _async_update_data will skip the SePush API and recompute the
+        forecast from the cached schedule, preventing quota exhaustion on every
+        HA restart (#116).
+        """
+        stored = await self._store.async_load()
+        if not stored:
+            return
+        with contextlib.suppress(Exception):
+            self.last_update = datetime.fromisoformat(stored["last_update"])
+            self.data = _deserialize_area_data(stored.get("data", {}))
+            _LOGGER.debug(
+                "Restored area cache (last_update=%s) %s", self.last_update, DIAG_CONTEXT
+            )
+
+    async def _save_cache(self) -> None:
+        """Persist last_update and data after a successful API poll."""
+        await self._store.async_save(
+            {
+                "last_update": self.last_update.isoformat() if self.last_update else None,
+                "data": _serialize_area_data(self.data),
+            }
+        )
 
     async def _async_update_data(self) -> dict:
         """Retrieve latest load shedding data."""
@@ -402,6 +581,7 @@ class LoadSheddingAreaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # schedule instead of disappearing until the next update interval.
             self.data = {**self.data, **area}
             self.last_update = now
+            await self._save_cache()
 
         await self.async_area_forecast()
         return self.data
