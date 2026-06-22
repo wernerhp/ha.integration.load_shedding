@@ -377,9 +377,11 @@ class LoadSheddingQuotaSensorEntity(
     """Define a LoadShedding Quota entity.
 
     Subscribes to the stage coordinator. When the stage poll fires (calling
-    ``sepush.status()``), the SePush client caches the ``x-ratelimit-*`` response
-    headers. This sensor reads that cache via ``coordinator.sepush.rate_limit()``
-    — no additional API call is ever made.
+    ``sepush.status()`` in an executor), the SePush client caches the
+    ``x-ratelimit-*`` response headers. This sensor reads that primed cache via
+    ``coordinator.sepush._rate_limit`` — it never calls ``rate_limit()`` while
+    the cache is empty, because that would issue a blocking network request
+    inside the event loop.
     """
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
@@ -424,13 +426,20 @@ class LoadSheddingQuotaSensorEntity(
         }
 
     def _rate_limit(self) -> dict:
-        """Read the cached SePush rate-limit snapshot.
+        """Read the cached SePush rate-limit snapshot without blocking I/O.
 
-        A transient API error here must not break the entity state update; the
-        outage itself is surfaced as a Repairs issue by the stage coordinator.
+        ``sepush.rate_limit()`` makes a blocking network request to prime its
+        cache when it is empty (e.g. on the #116 restart path, where the stage
+        poll is skipped so nothing has populated the cache yet). Reading it from
+        a sync entity property would then block the event loop, so only return
+        the snapshot once the stage coordinator's executor-run poll has primed
+        it; until then the restored attributes stand in.
         """
+        sepush = self.coordinator.sepush
+        if not getattr(sepush, "_rate_limit", None):
+            return {}
         try:
-            return self.coordinator.sepush.rate_limit() or {}
+            return sepush.rate_limit() or {}
         except SePushError as err:
             _LOGGER.debug("Unable to read SePush quota: %s", err)
             return {}

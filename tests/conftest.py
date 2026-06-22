@@ -119,6 +119,8 @@ def build_sepush_mock() -> MagicMock:
     sepush.area.return_value = AREA_DATA
     sepush.check_allowance.return_value = ALLOWANCE_DATA
     sepush.rate_limit.return_value = RATE_LIMIT_DATA
+    # Primed in-memory cache the quota sensor reads without triggering I/O.
+    sepush._rate_limit = RATE_LIMIT_DATA
     return sepush
 
 

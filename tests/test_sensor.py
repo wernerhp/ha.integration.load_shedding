@@ -160,9 +160,9 @@ async def test_quota_sensor_restores_attributes_on_restart(
 ) -> None:
     """The quota sensor restores its attributes when the API call is skipped.
 
-    On restart the #116 cache returns stage data without an API call, so
-    sepush.rate_limit() is empty. The count/limit/remaining attributes must be
-    restored from the last state until the first live poll repopulates them.
+    On restart the #116 cache returns stage data without an API call, so the
+    SePush rate-limit cache is empty. The count/limit/remaining attributes must
+    be restored from the last state until the first live poll repopulates them.
     """
     freezer.move_to(FROZEN_TIME)
     restored_attributes = {
@@ -186,7 +186,7 @@ async def test_quota_sensor_restores_attributes_on_restart(
         ),
     )
     # Simulate the reboot path: the rate-limit cache is empty until a live poll.
-    mock_sepush.rate_limit.return_value = {}
+    mock_sepush._rate_limit = {}
 
     entry = build_config_entry()
     entry.add_to_hass(hass)
@@ -200,6 +200,8 @@ async def test_quota_sensor_restores_attributes_on_restart(
     assert state.attributes["limit"] == 50
     assert state.attributes["remaining"] == 43
     assert state.attributes["type"] == "daily"
+    # An empty cache must never trigger rate_limit(), which would block on I/O.
+    mock_sepush.rate_limit.assert_not_called()
 
 
 def test_get_sensor_attrs_no_forecast() -> None:
