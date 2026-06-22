@@ -515,13 +515,16 @@ async def test_stage_coordinator_cache_skips_api_on_restart(
     """
     freezer.move_to(FROZEN_TIME)
     frozen_now = datetime.fromisoformat(FROZEN_TIME)
+    # last_update must be strictly before now so diff > 0; when diff == 0
+    # should_refresh() returns True (see helpers.should_refresh docstring).
+    cache_time = frozen_now - timedelta(seconds=1)
 
     entry = build_config_entry()
     entry.add_to_hass(hass)
 
     # Pre-populate the coordinator's store so async_load_cache restores it.
     store_data = {
-        "last_update": frozen_now.isoformat(),
+        "last_update": cache_time.isoformat(),
         "data": _serialize_stage_data(
             {
                 "eskom": {
@@ -562,12 +565,15 @@ async def test_area_coordinator_cache_skips_api_on_restart(
     """
     freezer.move_to(FROZEN_TIME)
     frozen_now = datetime.fromisoformat(FROZEN_TIME)
+    # last_update must be strictly before now so diff > 0; when diff == 0
+    # should_refresh() returns True (see helpers.should_refresh docstring).
+    cache_time = frozen_now - timedelta(seconds=1)
 
     entry = build_config_entry()
     entry.add_to_hass(hass)
 
     area_store_data = {
-        "last_update": frozen_now.isoformat(),
+        "last_update": cache_time.isoformat(),
         "data": _serialize_area_data(
             {
                 AREA_ID: {
