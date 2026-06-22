@@ -8,7 +8,7 @@ from load_shedding.libs.sepush import SePushError
 from load_shedding.providers import Stage
 
 from homeassistant.const import ATTR_NAME, STATE_OFF, STATE_ON
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 
 from custom_components.load_shedding.const import (
     ATTR_AREA,
@@ -28,9 +28,12 @@ from custom_components.load_shedding.sensor import (
     stage_forecast_to_data,
 )
 
-from .conftest import AREA_ID, FROZEN_TIME, STATUS_DATA
+from .conftest import AREA_ID, FROZEN_TIME, STATUS_DATA, build_config_entry
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    mock_restore_cache_with_extra_data,
+)
 
 
 async def test_stage_sensors(
@@ -148,6 +151,55 @@ async def test_quota_sensor_survives_rate_limit_error(
 
     state = hass.states.get("sensor.load_shedding_sepush_api_quota")
     assert state.state == "5"
+
+
+async def test_quota_sensor_restores_attributes_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The quota sensor restores its attributes when the API call is skipped.
+
+    On restart the #116 cache returns stage data without an API call, so
+    sepush.rate_limit() is empty. The count/limit/remaining attributes must be
+    restored from the last state until the first live poll repopulates them.
+    """
+    freezer.move_to(FROZEN_TIME)
+    restored_attributes = {
+        "count": 7,
+        "limit": 50,
+        "remaining": 43,
+        "reset": "2026-06-19T00:00:00+00:00",
+        "type": "daily",
+    }
+    mock_restore_cache_with_extra_data(
+        hass,
+        (
+            (
+                State(
+                    "sensor.load_shedding_sepush_api_quota",
+                    "7",
+                    attributes=restored_attributes,
+                ),
+                {"native_value": 7, "native_unit_of_measurement": None},
+            ),
+        ),
+    )
+    # Simulate the reboot path: the rate-limit cache is empty until a live poll.
+    mock_sepush.rate_limit.return_value = {}
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.load_shedding_sepush_api_quota")
+    assert state is not None
+    assert state.state == "7"
+    assert state.attributes["count"] == 7
+    assert state.attributes["limit"] == 50
+    assert state.attributes["remaining"] == 43
+    assert state.attributes["type"] == "daily"
 
 
 def test_get_sensor_attrs_no_forecast() -> None:

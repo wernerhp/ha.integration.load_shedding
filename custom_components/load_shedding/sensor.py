@@ -97,11 +97,23 @@ RESTORABLE_ATTRS = (
     ATTR_AREA_ID,
 )
 
+# Quota attributes restored after a restart so count/limit/remaining survive a
+# reboot that skips the API call (e.g. the #116 restart cache leaves
+# sepush.rate_limit() empty) until the first live poll repopulates them.
+QUOTA_RESTORABLE_ATTRS = (
+    "count",
+    "limit",
+    "remaining",
+    "reset",
+    "type",
+    ATTR_LAST_UPDATE,
+)
 
-def restorable_attrs(last_state) -> dict:
+
+def restorable_attrs(last_state, allowed=RESTORABLE_ATTRS) -> dict:
     """Return the data-bearing attributes worth restoring after a restart."""
     attributes = last_state.attributes if last_state is not None else {}
-    restored = filter_restorable_attrs(attributes, RESTORABLE_ATTRS)
+    restored = filter_restorable_attrs(attributes, allowed)
     return rehydrate_restored_datetimes(restored)
 
 
@@ -388,6 +400,16 @@ class LoadSheddingQuotaSensorEntity(
         """Handle entity which will be added."""
         if restored_data := await self.async_get_last_sensor_data():
             self._attr_native_value = restored_data.native_value
+        # Restore the last known quota attributes so count/limit/remaining
+        # survive a restart that skips the API call (#116 restart cache), until
+        # the first live poll repopulates them from sepush.rate_limit().
+        if attrs := restorable_attrs(
+            await self.async_get_last_state(), QUOTA_RESTORABLE_ATTRS
+        ):
+            if not hasattr(self, "_attr_extra_state_attributes"):
+                self._attr_extra_state_attributes = {}
+            if not self._attr_extra_state_attributes:
+                self._attr_extra_state_attributes = attrs
         await super().async_added_to_hass()
 
     def _quota(self) -> dict:
