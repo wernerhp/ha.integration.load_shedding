@@ -44,6 +44,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Appended to diagnostic logs so user-submitted logs identify the integration
+# and Home Assistant versions without us having to ask.
+DIAG_CONTEXT = f"[load_shedding {VERSION}, Home Assistant {HA_VERSION}]"
+
 
 def _get_sepush_status_code(err: BaseException) -> int | None:
     """Walk the exception chain and return the first SePushError.status_code found.
@@ -120,7 +124,7 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
 
         if self.api_key:
             try:
-                # Validate the token by checking the allowance.
+                # Validate the token with a free, unmetered request.
                 sepush = SePush(
                     token=self.api_key,
                     user_agent_context={
@@ -128,7 +132,7 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                         "homeassistant": HA_VERSION,
                     },
                 )
-                await self.hass.async_add_executor_job(sepush.check_allowance)
+                await self.hass.async_add_executor_job(sepush.rate_limit, True)
             except SePushError as err:
                 status_code = err.status_code
                 if status_code == 400:
@@ -140,8 +144,15 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                 elif status_code == 500:
                     errors["base"] = "sepush_500"
                 else:
-                    _LOGGER.error("Unable to initialise SePush API: %s", err)
+                    _LOGGER.error(
+                        "Unable to initialise SePush API: %s %s", err, DIAG_CONTEXT
+                    )
                     errors["base"] = "provider_error"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Unexpected error validating SePush API token %s", DIAG_CONTEXT
+                )
+                errors["base"] = "unknown"
             else:
                 return await self.async_step_lookup_areas(user_input)
 
@@ -204,7 +215,12 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                     get_areas, provider, search_text
                 )
             except ProviderError as err:
-                _LOGGER.debug("Area search error", exc_info=True)
+                _LOGGER.debug(
+                    "Area search error for '%s' %s",
+                    search_text,
+                    DIAG_CONTEXT,
+                    exc_info=True,
+                )
                 status_code = _get_sepush_status_code(err)
                 if status_code == 403:
                     errors["base"] = "sepush_403"
@@ -213,7 +229,12 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
                 elif status_code == 500:
                     errors["base"] = "sepush_500"
                 else:
-                    _LOGGER.error("Unable to search for areas: %s", err)
+                    _LOGGER.error(
+                        "Unable to search for areas matching '%s': %s %s",
+                        search_text,
+                        err,
+                        DIAG_CONTEXT,
+                    )
                     errors["base"] = "provider_error"
             else:
                 self.areas = {}
@@ -254,6 +275,10 @@ class LoadSheddingFlowHandler(ConfigFlow, domain=DOMAIN):
         """Handle the flow step to create a area."""
         area_id = user_input.get(CONF_AREA_ID)
         area = self.areas.get(area_id)
+        if area is None:
+            # Selection could not be resolved (e.g. stale search results);
+            # send the user back to search instead of crashing the flow.
+            return await self.async_step_lookup_areas()
 
         description = f"{area.name}"
 
@@ -327,7 +352,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                 ): bool,
                 vol.Optional(
                     CONF_MIN_EVENT_DURATION,
-                    default=self.options.get(CONF_MIN_EVENT_DURATION, 31),
+                    default=self.options.get(CONF_MIN_EVENT_DURATION, 30),
                 ): int,
             }
         )
@@ -349,7 +374,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
         errors = {}
         if api_key:
             try:
-                # Validate the token by checking the allowance.
+                # Validate the token with a free, unmetered request.
                 sepush = SePush(
                     token=api_key,
                     user_agent_context={
@@ -357,7 +382,7 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                         "homeassistant": HA_VERSION,
                     },
                 )
-                esp = await self.hass.async_add_executor_job(sepush.check_allowance)
+                esp = await self.hass.async_add_executor_job(sepush.rate_limit, True)
                 _LOGGER.debug("Validate API Key Response: %s", esp)
             except SePushError as err:
                 status_code = err.status_code
@@ -370,8 +395,15 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                 elif status_code == 500:
                     errors["base"] = "sepush_500"
                 else:
-                    _LOGGER.error("Unable to initialise SePush API: %s", err)
+                    _LOGGER.error(
+                        "Unable to initialise SePush API: %s %s", err, DIAG_CONTEXT
+                    )
                     errors["base"] = "provider_error"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Unexpected error validating SePush API token %s", DIAG_CONTEXT
+                )
+                errors["base"] = "unknown"
             else:
                 self.api_key = api_key
                 self.options[CONF_API_KEY] = api_key
@@ -448,7 +480,12 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                     get_areas, provider, search_text
                 )
             except ProviderError as err:
-                _LOGGER.debug("Area search error", exc_info=True)
+                _LOGGER.debug(
+                    "Area search error for '%s' %s",
+                    search_text,
+                    DIAG_CONTEXT,
+                    exc_info=True,
+                )
                 status_code = _get_sepush_status_code(err)
                 if status_code == 403:
                     errors["base"] = "sepush_403"
@@ -457,7 +494,12 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
                 elif status_code == 500:
                     errors["base"] = "sepush_500"
                 else:
-                    _LOGGER.error("Unable to search for areas: %s", err)
+                    _LOGGER.error(
+                        "Unable to search for areas matching '%s': %s %s",
+                        search_text,
+                        err,
+                        DIAG_CONTEXT,
+                    )
                     errors["base"] = "provider_error"
             else:
                 self.areas = {}
@@ -497,6 +539,10 @@ class LoadSheddingOptionsFlowHandler(OptionsFlowWithConfigEntry):
     ) -> FlowResult:
         """Handle the flow step to create a area."""
         area = self.areas.get(user_input.get(CONF_AREA_ID))
+        if area is None:
+            # Selection could not be resolved (e.g. stale search results);
+            # send the user back to search instead of crashing the flow.
+            return await self.async_step_lookup_areas()
 
         description = f"{area.name}"
         if area.municipality:

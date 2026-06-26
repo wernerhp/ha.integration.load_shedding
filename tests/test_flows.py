@@ -90,7 +90,7 @@ async def test_user_flow_api_errors(
     expected: str,
 ) -> None:
     """API errors while validating the key surface as form errors."""
-    mock_sepush.check_allowance.side_effect = SePushError(
+    mock_sepush.rate_limit.side_effect = SePushError(
         "boom", status_code=status_code
     )
     result = await hass.config_entries.flow.async_init(
@@ -101,6 +101,22 @@ async def test_user_flow_api_errors(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": expected}
+
+
+async def test_user_flow_unexpected_error(
+    hass: HomeAssistant, mock_sepush: MagicMock
+) -> None:
+    """An unexpected error while validating the key surfaces as 'unknown'."""
+    mock_sepush.rate_limit.side_effect = ValueError("boom")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_API_KEY: API_KEY}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "sepush"
+    assert result["errors"] == {"base": "unknown"}
 
 
 async def test_user_flow_no_results(
@@ -285,6 +301,25 @@ async def test_options_flow_setup_api(
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert init_integration.options[CONF_API_KEY] == "new-key"
+
+
+async def test_options_flow_setup_api_unexpected_error(
+    hass: HomeAssistant, init_integration: MockConfigEntry, mock_sepush: MagicMock
+) -> None:
+    """An unexpected error while reconfiguring the key surfaces as 'unknown'."""
+    mock_sepush.rate_limit.side_effect = ValueError("boom")
+    result = await hass.config_entries.options.async_init(
+        init_integration.entry_id
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_ACTION: CONF_SETUP_API}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_API_KEY: "new-key"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "sepush"
+    assert result["errors"] == {"base": "unknown"}
 
 
 async def test_options_flow_add_area_no_results(

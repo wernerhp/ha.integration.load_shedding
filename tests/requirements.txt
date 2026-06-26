@@ -1,0 +1,5 @@
+# Dependencies for running the unit tests (no full Home Assistant needed —
+# the tested logic lives in dependency-free modules: const.py, helpers.py).
+pytest>=8.0
+voluptuous>=0.13
+load_shedding==0.15.0

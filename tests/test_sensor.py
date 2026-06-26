@@ -1,12 +1,14 @@
 """Tests for the Load Shedding sensor platform."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 from freezegun.api import FrozenDateTimeFactory
+from load_shedding.libs.sepush import SePushError
 from load_shedding.providers import Stage
 
 from homeassistant.const import ATTR_NAME, STATE_OFF, STATE_ON
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 
 from custom_components.load_shedding.const import (
     ATTR_AREA,
@@ -14,11 +16,11 @@ from custom_components.load_shedding.const import (
     ATTR_EVENTS,
     ATTR_FORECAST,
     ATTR_PLANNED,
-    ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_TIME,
     DOMAIN,
+    STAGE_UPDATE_INTERVAL,
 )
 from custom_components.load_shedding.sensor import (
     clean,
@@ -26,9 +28,12 @@ from custom_components.load_shedding.sensor import (
     stage_forecast_to_data,
 )
 
-from .conftest import AREA_ID, FROZEN_TIME
+from .conftest import AREA_ID, FROZEN_TIME, STATUS_DATA, build_config_entry
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    mock_restore_cache_with_extra_data,
+)
 
 
 async def test_stage_sensors(
@@ -111,16 +116,92 @@ async def test_area_sensor_updates_active(
 
 
 async def test_quota_sensor_updates_on_coordinator_push(
-    hass: HomeAssistant, init_integration: MockConfigEntry
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    init_integration: MockConfigEntry,
 ) -> None:
-    """Pushing new quota data updates the quota sensor state."""
+    """Pushing new stage data updates the quota sensor (reads rate_limit cache)."""
     entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    coordinator.async_set_updated_data({"count": 12, "limit": 50, "type": "daily"})
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    # Update the cached rate-limit snapshot, then trigger a stage coordinator push.
+    mock_sepush._rate_limit = {
+        "used": 12,
+        "limit": 50,
+        "remaining": 38,
+        "reset": "2026-06-19T00:00:00+00:00",
+    }
+    coordinator.async_set_updated_data(coordinator.data)
     await hass.async_block_till_done()
 
     state = hass.states.get("sensor.load_shedding_sepush_api_quota")
     assert state.state == "12"
+
+
+async def test_quota_sensor_survives_rate_limit_error(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    init_integration: MockConfigEntry,
+) -> None:
+    """A transient rate_limit() error keeps the quota sensor's last value."""
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    mock_sepush.rate_limit.side_effect = SePushError("boom", status_code=500)
+    coordinator.async_set_updated_data(coordinator.data)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.load_shedding_sepush_api_quota")
+    assert state.state == "5"
+
+
+async def test_quota_sensor_restores_attributes_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The quota sensor restores its attributes when the API call is skipped.
+
+    On restart the #116 cache returns stage data without an API call, so the
+    SePush rate-limit cache is empty. The count/limit/remaining attributes must
+    be restored from the last state until the first live poll repopulates them.
+    """
+    freezer.move_to(FROZEN_TIME)
+    restored_attributes = {
+        "count": 7,
+        "limit": 50,
+        "remaining": 43,
+        "reset": "2026-06-19T00:00:00+00:00",
+        "type": "daily",
+    }
+    mock_restore_cache_with_extra_data(
+        hass,
+        (
+            (
+                State(
+                    "sensor.load_shedding_sepush_api_quota",
+                    "7",
+                    attributes=restored_attributes,
+                ),
+                {"native_value": 7, "native_unit_of_measurement": None},
+            ),
+        ),
+    )
+    # Simulate the reboot path: the rate-limit cache is empty until a live poll.
+    mock_sepush._rate_limit = {}
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.load_shedding_sepush_api_quota")
+    assert state is not None
+    assert state.state == "7"
+    assert state.attributes["count"] == 7
+    assert state.attributes["limit"] == 50
+    assert state.attributes["remaining"] == 43
+    assert state.attributes["type"] == "daily"
+    # An empty cache must never trigger rate_limit(), which would block on I/O.
+    mock_sepush.rate_limit.assert_not_called()
 
 
 def test_get_sensor_attrs_no_forecast() -> None:
@@ -184,3 +265,148 @@ def test_stage_forecast_to_data() -> None:
             ATTR_END_TIME: end.isoformat(),
         }
     ]
+
+
+async def test_area_sensor_attributes_clear_when_forecast_empties(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Forecast-derived attributes clear when the forecast empties (C2)."""
+    freezer.move_to(FROZEN_TIME)
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_AREA]
+    entity_id = "sensor.load_shedding_area_za_gt_tsh_garsfontein_gaev"
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+
+    new_data = dict(coordinator.data)
+    new_data[AREA_ID] = {
+        ATTR_FORECAST: [
+            {
+                ATTR_STAGE: Stage.STAGE_2,
+                ATTR_START_TIME: now + timedelta(hours=1),
+                ATTR_END_TIME: now + timedelta(hours=3),
+            }
+        ],
+        ATTR_SCHEDULE: {},
+        ATTR_EVENTS: [],
+    }
+    coordinator.async_set_updated_data(new_data)
+    await hass.async_block_till_done()
+
+    attrs = hass.states.get(entity_id).attributes
+    assert attrs[ATTR_FORECAST]
+    assert "starts_in" in attrs
+
+    empty_data = dict(coordinator.data)
+    empty_data[AREA_ID] = {ATTR_FORECAST: [], ATTR_SCHEDULE: {}, ATTR_EVENTS: []}
+    coordinator.async_set_updated_data(empty_data)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_OFF
+    assert not state.attributes.get(ATTR_FORECAST)
+    assert "starts_in" not in state.attributes
+    assert "start_time" not in state.attributes
+
+
+async def test_stage_sensor_attributes_clear_when_planned_empties(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage planned-derived attributes clear when the planned list empties (C2)."""
+    freezer.move_to(FROZEN_TIME)
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    entity_id = "sensor.load_shedding_stage_eskom"
+
+    attrs = hass.states.get(entity_id).attributes
+    assert attrs[ATTR_PLANNED]
+    assert "next_stage" in attrs
+
+    new_data = dict(coordinator.data)
+    new_data["eskom"] = {ATTR_NAME: "National", ATTR_PLANNED: []}
+    coordinator.async_set_updated_data(new_data)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.state == str(Stage.NO_LOAD_SHEDDING)
+    assert not state.attributes.get(ATTR_PLANNED)
+    assert "next_stage" not in state.attributes
+    assert "ends_in" not in state.attributes
+
+
+async def test_area_sensor_merges_contiguous_end_time(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Area sensor extends end_time across a contiguous stage change (#54 wiring)."""
+    freezer.move_to(FROZEN_TIME)
+    entry = init_integration
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_AREA]
+    entity_id = "sensor.load_shedding_area_za_gt_tsh_garsfontein_gaev"
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+
+    new_data = dict(coordinator.data)
+    new_data[AREA_ID] = {
+        ATTR_FORECAST: [
+            {
+                ATTR_STAGE: Stage.STAGE_2,
+                ATTR_START_TIME: now - timedelta(hours=1),
+                ATTR_END_TIME: now + timedelta(hours=1),
+            },
+            {
+                ATTR_STAGE: Stage.STAGE_4,
+                ATTR_START_TIME: now + timedelta(hours=1),
+                ATTR_END_TIME: now + timedelta(hours=3),
+            },
+        ],
+        ATTR_SCHEDULE: {},
+        ATTR_EVENTS: [],
+    }
+    coordinator.async_set_updated_data(new_data)
+    await hass.async_block_till_done()
+
+    attrs = hass.states.get(entity_id).attributes
+    assert attrs[ATTR_END_TIME] == (now + timedelta(hours=3)).isoformat()
+
+
+async def test_stage_sensor_preserves_next_fields(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage sensor keeps per-stage next_* fields (planned is not merged, #54 wiring)."""
+    freezer.move_to(FROZEN_TIME)
+    attrs = hass.states.get("sensor.load_shedding_stage_eskom").attributes
+    assert attrs["next_stage"] == Stage.STAGE_4.value
+    assert "next_start_time" in attrs
+
+
+async def test_stage_entities_created_after_empty_first_refresh(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    mock_config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage entities appear once data arrives even if the first poll was empty (M2)."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("quota", status_code=429)
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.load_shedding_stage_eskom") is None
+    assert hass.states.get("sensor.load_shedding_stage_capetown") is None
+
+    mock_sepush.status.side_effect = None
+    mock_sepush.status.return_value = STATUS_DATA
+    coordinator = hass.data[DOMAIN][mock_config_entry.entry_id][ATTR_STAGE]
+    freezer.tick(timedelta(seconds=STAGE_UPDATE_INTERVAL + 1))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.load_shedding_stage_eskom") is not None
+    assert hass.states.get("sensor.load_shedding_stage_capetown") is not None

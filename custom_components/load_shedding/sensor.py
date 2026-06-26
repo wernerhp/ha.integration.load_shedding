@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, cast
 
+from load_shedding.libs.sepush import SePushError
 from load_shedding.providers import Area, Stage
 
 from homeassistant.components.sensor import (
@@ -22,18 +24,25 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import LoadSheddingDevice
+from .helpers import (
+    build_sensor_attrs,
+    filter_restorable_attrs,
+    is_load_shedding_active,
+    merge_forecast,
+    rehydrate_restored_datetimes,
+)
 from .const import (
     ATTR_AREA,
     ATTR_AREA_ID,
     ATTR_END_IN,
     ATTR_END_TIME,
     ATTR_FORECAST,
+    ATTR_FORECAST_CALENDAR,
     ATTR_LAST_UPDATE,
     ATTR_NEXT_END_TIME,
     ATTR_NEXT_STAGE,
     ATTR_NEXT_START_TIME,
     ATTR_PLANNED,
-    ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_IN,
@@ -42,6 +51,8 @@ from .const import (
     DOMAIN,
     NAME,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_DATA = {
     ATTR_STAGE: Stage.NO_LOAD_SHEDDING.value,
@@ -62,8 +73,48 @@ DEFAULT_DATA = {
 CLEAN_DATA = {
     ATTR_PLANNED: [],
     ATTR_FORECAST: [],
+    ATTR_FORECAST_CALENDAR: [],
     ATTR_SCHEDULE: [],
 }
+
+# Data-bearing attributes restored after a restart so the forecast/schedule
+# survive an API outage (e.g. an exhausted daily quota) until the first
+# successful poll, instead of disappearing (#31). Reserved/entity-managed
+# attributes (friendly_name, icon, unit, ...) are deliberately excluded.
+RESTORABLE_ATTRS = (
+    ATTR_STAGE,
+    ATTR_START_TIME,
+    ATTR_END_TIME,
+    ATTR_END_IN,
+    ATTR_START_IN,
+    ATTR_NEXT_STAGE,
+    ATTR_NEXT_START_TIME,
+    ATTR_NEXT_END_TIME,
+    ATTR_PLANNED,
+    ATTR_FORECAST,
+    ATTR_FORECAST_CALENDAR,
+    ATTR_SCHEDULE,
+    ATTR_AREA_ID,
+)
+
+# Quota attributes restored after a restart as a fallback for when the #116
+# restart cache has no persisted rate-limit snapshot to reseed (e.g. a fresh or
+# corrupt cache), so count/limit/remaining survive until the first live poll.
+QUOTA_RESTORABLE_ATTRS = (
+    "count",
+    "limit",
+    "remaining",
+    "reset",
+    "type",
+    ATTR_LAST_UPDATE,
+)
+
+
+def restorable_attrs(last_state, allowed=RESTORABLE_ATTRS) -> dict:
+    """Return the data-bearing attributes worth restoring after a restart."""
+    attributes = last_state.attributes if last_state is not None else {}
+    restored = filter_restorable_attrs(attributes, allowed)
+    return rehydrate_restored_datetimes(restored)
 
 
 async def async_setup_entry(
@@ -73,18 +124,38 @@ async def async_setup_entry(
     coordinators = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     stage_coordinator = coordinators.get(ATTR_STAGE)
     area_coordinator = coordinators.get(ATTR_AREA)
-    quota_coordinator = coordinators.get(ATTR_QUOTA)
+    known_providers: set[str] = set()
+
+    @callback
+    def _async_add_stage_entities() -> None:
+        """Create stage entities for newly seen providers.
+
+        Providers are discovered from the SePush status payload, so when the
+        first poll is empty (e.g. the API quota is exhausted at startup) the
+        entities are created later, once data arrives (M2).
+        """
+        new = [idx for idx in stage_coordinator.data if idx not in known_providers]
+        if not new:
+            return
+        known_providers.update(new)
+        async_add_entities(
+            LoadSheddingStageSensorEntity(stage_coordinator, idx) for idx in new
+        )
+
+    entry.async_on_unload(
+        stage_coordinator.async_add_listener(_async_add_stage_entities)
+    )
+    _async_add_stage_entities()
 
     entities: list[Entity] = []
-    for idx in stage_coordinator.data:
-        stage_entity = LoadSheddingStageSensorEntity(stage_coordinator, idx)
-        entities.append(stage_entity)
-
     for area in area_coordinator.areas:
         area_entity = LoadSheddingAreaSensorEntity(area_coordinator, area)
         entities.append(area_entity)
 
-    quota_entity = LoadSheddingQuotaSensorEntity(quota_coordinator)
+    # Quota sensor subscribes to the stage coordinator — the stage poll (status)
+    # populates sepush.rate_limit() as a side-effect, so no dedicated quota call
+    # is ever needed.
+    quota_entity = LoadSheddingQuotaSensorEntity(stage_coordinator)
     entities.append(quota_entity)
 
     async_add_entities(entities)
@@ -119,6 +190,13 @@ class LoadSheddingStageSensorEntity(
         """Handle entity which will be added."""
         if restored_data := await self.async_get_last_sensor_data():
             self._attr_native_value = restored_data.native_value
+        # Restore last known attributes so the planned schedule survives a
+        # restart while the API quota is exhausted, until the first poll (#31).
+        if attrs := restorable_attrs(await self.async_get_last_state()):
+            if not hasattr(self, "_attr_extra_state_attributes"):
+                self._attr_extra_state_attributes = {}
+            if not self._attr_extra_state_attributes:
+                self._attr_extra_state_attributes = attrs
         await super().async_added_to_hass()
 
     @property
@@ -143,7 +221,7 @@ class LoadSheddingStageSensorEntity(
         return self._attr_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, list, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
@@ -152,31 +230,26 @@ class LoadSheddingStageSensorEntity(
         if not self.data:
             return self._attr_extra_state_attributes
 
-        if not self.data:
-            return self._attr_extra_state_attributes
-
         now = datetime.now(UTC)
-        data = dict(self._attr_extra_state_attributes)
-        if events := self.data.get(ATTR_PLANNED, []):
-            data[ATTR_PLANNED] = []
-            for event in events:
-                if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                    continue
+        # Rebuild the planned list from live coordinator data unconditionally so
+        # stale entries (and derived next_*/ends_in fields) are dropped when the
+        # planned list empties (C2).
+        planned = []
+        for event in self.data.get(ATTR_PLANNED, []):
+            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+                continue
 
-                planned = {
-                    ATTR_STAGE: event.get(ATTR_STAGE),
-                    ATTR_START_TIME: event.get(ATTR_START_TIME),
-                }
-                if ATTR_END_TIME in event:
-                    planned[ATTR_END_TIME] = event.get(ATTR_END_TIME)
+            entry = {
+                ATTR_STAGE: event.get(ATTR_STAGE),
+                ATTR_START_TIME: event.get(ATTR_START_TIME),
+            }
+            if ATTR_END_TIME in event:
+                entry[ATTR_END_TIME] = event.get(ATTR_END_TIME)
 
-                data[ATTR_PLANNED].append(planned)
+            planned.append(entry)
 
         cur_stage = Stage.NO_LOAD_SHEDDING
-
-        planned = []
-        if ATTR_PLANNED in data:
-            planned = data[ATTR_PLANNED]
+        if planned:
             cur_stage = planned[0].get(ATTR_STAGE, Stage.NO_LOAD_SHEDDING)
 
         attrs = get_sensor_attrs(planned, cur_stage)
@@ -184,7 +257,7 @@ class LoadSheddingStageSensorEntity(
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
-        self._attr_extra_state_attributes.update(attrs)
+        self._attr_extra_state_attributes = attrs
         return self._attr_extra_state_attributes
 
     @callback
@@ -223,6 +296,13 @@ class LoadSheddingAreaSensorEntity(
         """Handle entity which will be added."""
         if restored_data := await self.async_get_last_sensor_data():
             self._attr_native_value = restored_data.native_value
+        # Restore last known attributes so the forecast/schedule survive a
+        # restart while the API quota is exhausted, until the first poll (#31).
+        if attrs := restorable_attrs(await self.async_get_last_state()):
+            if not hasattr(self, "_attr_extra_state_attributes"):
+                self._attr_extra_state_attributes = {}
+            if not self._attr_extra_state_attributes:
+                self._attr_extra_state_attributes = attrs
         await super().async_added_to_hass()
 
     @property
@@ -237,32 +317,16 @@ class LoadSheddingAreaSensorEntity(
             return self._attr_native_value
 
         events = self.data.get(ATTR_FORECAST, [])
-
-        if not events:
-            return STATE_OFF
-
         now = datetime.now(UTC)
 
-        for event in events:
-            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                continue
-
-            if event.get(ATTR_START_TIME) <= now <= event.get(ATTR_END_TIME):
-                self._attr_native_value = cast(StateType, STATE_ON)
-                break
-
-            if event.get(ATTR_START_TIME) > now:
-                self._attr_native_value = cast(StateType, STATE_OFF)
-                break
-
-            if event.get(ATTR_STAGE) == Stage.NO_LOAD_SHEDDING:
-                self._attr_native_value = cast(StateType, STATE_OFF)
-                break
-
+        # Default to OFF; only ON for a currently-active event. Guarantees the
+        # state clears when load shedding ends (#103/#104).
+        state = STATE_ON if is_load_shedding_active(events, now) else STATE_OFF
+        self._attr_native_value = cast(StateType, state)
         return self._attr_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, list, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
@@ -271,32 +335,30 @@ class LoadSheddingAreaSensorEntity(
             return self._attr_extra_state_attributes
 
         now = datetime.now(UTC)
-        data = dict(self._attr_extra_state_attributes)
-        if events := self.data.get(ATTR_FORECAST, []):
-            data[ATTR_FORECAST] = []
-            for event in events:
-                if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
-                    continue
+        # Rebuild the forecast from live coordinator data unconditionally so
+        # stale events (and derived next_*/ends_in fields) are dropped when the
+        # forecast empties at the end of load shedding (C2).
+        forecast = []
+        for event in self.data.get(ATTR_FORECAST, []):
+            if ATTR_END_TIME in event and event.get(ATTR_END_TIME) < now:
+                continue
 
-                forecast = {
+            forecast.append(
+                {
                     ATTR_STAGE: event.get(ATTR_STAGE),
                     ATTR_START_TIME: event.get(ATTR_START_TIME),
                     ATTR_END_TIME: event.get(ATTR_END_TIME),
                 }
+            )
 
-                data[ATTR_FORECAST].append(forecast)
-
-        forecast = []
-        if ATTR_FORECAST in data:
-            forecast = data[ATTR_FORECAST]
-
-        attrs = get_sensor_attrs(forecast)
+        attrs = get_sensor_attrs(forecast, merge_contiguous=True)
         attrs[ATTR_AREA_ID] = self.area.id
         attrs[ATTR_FORECAST] = forecast
+        attrs[ATTR_FORECAST_CALENDAR] = merge_forecast(forecast)
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
-        self._attr_extra_state_attributes.update(attrs)
+        self._attr_extra_state_attributes = attrs
         return self._attr_extra_state_attributes
 
     @callback
@@ -312,12 +374,20 @@ class LoadSheddingAreaSensorEntity(
 class LoadSheddingQuotaSensorEntity(
     LoadSheddingDevice, CoordinatorEntity, RestoreSensor
 ):
-    """Define a LoadShedding Quota entity."""
+    """Define a LoadShedding Quota entity.
+
+    Subscribes to the stage coordinator. When the stage poll fires (calling
+    ``sepush.status()`` in an executor), the SePush client caches the
+    ``x-ratelimit-*`` response headers. On restart the persisted #116 cache
+    reseeds that same ``sepush._rate_limit`` snapshot, so the value is available
+    even when the poll is skipped. This sensor reads the primed cache and never
+    calls ``rate_limit()`` while it is empty, because that would issue a
+    blocking network request inside the event loop.
+    """
 
     def __init__(self, coordinator: CoordinatorEntity) -> None:
         """Initialize the quota sensor."""
         super().__init__(coordinator)
-        self.data = self.coordinator.data
 
         self.entity_description = LoadSheddingSensorDescription(
             key=f"{DOMAIN} SePush Quota",
@@ -333,7 +403,47 @@ class LoadSheddingQuotaSensorEntity(
         """Handle entity which will be added."""
         if restored_data := await self.async_get_last_sensor_data():
             self._attr_native_value = restored_data.native_value
+        # Fallback for when the #116 cache has no persisted rate-limit snapshot
+        # to reseed: restore the last known quota attributes so count/limit/
+        # remaining survive until the first live poll repopulates them.
+        if attrs := restorable_attrs(
+            await self.async_get_last_state(), QUOTA_RESTORABLE_ATTRS
+        ):
+            if not hasattr(self, "_attr_extra_state_attributes"):
+                self._attr_extra_state_attributes = {}
+            if not self._attr_extra_state_attributes:
+                self._attr_extra_state_attributes = attrs
         await super().async_added_to_hass()
+
+    def _quota(self) -> dict:
+        """Return the current quota snapshot (pure cache read, no I/O)."""
+        rate_limit = self._rate_limit()
+        return {
+            "count": rate_limit.get("used") or 0,
+            "limit": rate_limit.get("limit") or 0,
+            "remaining": rate_limit.get("remaining"),
+            "reset": rate_limit.get("reset"),
+            "type": "daily",
+        }
+
+    def _rate_limit(self) -> dict:
+        """Read the cached SePush rate-limit snapshot without blocking I/O.
+
+        ``sepush.rate_limit()`` makes a blocking network request to prime its
+        cache when it is empty. On restart the persisted #116 cache reseeds the
+        snapshot, and a live status() poll primes it otherwise; until either has
+        happened the cache may still be empty (e.g. a fresh install), so guard
+        against calling ``rate_limit()`` then and let the restored attributes
+        stand in rather than blocking the event loop.
+        """
+        sepush = self.coordinator.sepush
+        if not getattr(sepush, "_rate_limit", None):
+            return {}
+        try:
+            return sepush.rate_limit() or {}
+        except SePushError as err:
+            _LOGGER.debug("Unable to read SePush quota: %s", err)
+            return {}
 
     @property
     def name(self) -> str | None:
@@ -342,24 +452,25 @@ class LoadSheddingQuotaSensorEntity(
 
     @property
     def native_value(self) -> StateType:
-        """Return the stage state."""
-        if not self.data:
+        """Return the API credits used so far today."""
+        rate_limit = self._rate_limit()
+        if not rate_limit:
             return self._attr_native_value
-
-        count = int(self.data.get("count", 0))
+        count = int(rate_limit.get("used") or 0)
         self._attr_native_value = cast(StateType, count)
         return self._attr_native_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, list, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes."""
         if not hasattr(self, "_attr_extra_state_attributes"):
             self._attr_extra_state_attributes = {}
 
-        if not self.data:
+        rate_limit = self._rate_limit()
+        if not rate_limit:
             return self._attr_extra_state_attributes
 
-        attrs = self.data
+        attrs = self._quota()
         attrs[ATTR_LAST_UPDATE] = self.coordinator.last_update
         attrs = clean(attrs)
 
@@ -369,11 +480,8 @@ class LoadSheddingQuotaSensorEntity(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if data := self.coordinator.data:
-            self.data = data
-            # Explicitly get the native value to force state update
-            self._attr_native_value = self.native_value
-            self.async_write_ha_state()
+        self._attr_native_value = self.native_value
+        self.async_write_ha_state()
 
 
 def stage_forecast_to_data(stage_forecast: list) -> list:
@@ -392,63 +500,26 @@ def stage_forecast_to_data(stage_forecast: list) -> list:
     return data
 
 
-def get_sensor_attrs(forecast: list, stage: Stage = Stage.NO_LOAD_SHEDDING) -> dict:
-    """Get sensor attributes for the given forecast and stage."""
-    if not forecast:
-        return {
-            ATTR_STAGE: stage.value,
-        }
+def get_sensor_attrs(
+    forecast: list,
+    stage: Stage = Stage.NO_LOAD_SHEDDING,
+    *,
+    merge_contiguous: bool = False,
+) -> dict:
+    """Get sensor attributes for the given forecast and stage.
 
-    now = datetime.now(UTC)
-    data = dict(DEFAULT_DATA)
-    data[ATTR_STAGE] = stage.value
-
-    cur, nxt = {}, {}
-    if now < forecast[0].get(ATTR_START_TIME):
-        # before
-        nxt = forecast[0]
-    elif forecast[0].get(ATTR_START_TIME) <= now <= forecast[0].get(ATTR_END_TIME, now):
-        # during
-        cur = forecast[0]
-        if len(forecast) > 1:
-            nxt = forecast[1]
-    elif forecast[0].get(ATTR_END_TIME) < now:
-        # after
-        if len(forecast) > 1:
-            nxt = forecast[1]
-
-    if cur:
-        try:
-            data[ATTR_STAGE] = cur.get(ATTR_STAGE).value
-        except AttributeError:
-            data[ATTR_STAGE] = Stage.NO_LOAD_SHEDDING.value
-        data[ATTR_START_TIME] = cur.get(ATTR_START_TIME).isoformat()
-        if ATTR_END_TIME in cur:
-            data[ATTR_END_TIME] = cur.get(ATTR_END_TIME).isoformat()
-
-            end_time = cur.get(ATTR_END_TIME)
-            ends_in = end_time - now
-            ends_in = ends_in - timedelta(microseconds=ends_in.microseconds)
-            ends_in = int(ends_in.total_seconds() / 60)  # minutes
-            data[ATTR_END_IN] = ends_in
-
-    if nxt:
-        try:
-            data[ATTR_NEXT_STAGE] = nxt.get(ATTR_STAGE).values
-        except AttributeError:
-            data[ATTR_NEXT_STAGE] = Stage.NO_LOAD_SHEDDING.value
-
-        data[ATTR_NEXT_START_TIME] = nxt.get(ATTR_START_TIME).isoformat()
-        if ATTR_END_TIME in nxt:
-            data[ATTR_NEXT_END_TIME] = nxt.get(ATTR_END_TIME).isoformat()
-
-        start_time = nxt.get(ATTR_START_TIME)
-        starts_in = start_time - now
-        starts_in = starts_in - timedelta(microseconds=starts_in.microseconds)
-        starts_in = int(starts_in.total_seconds() / 60)  # minutes
-        data[ATTR_START_IN] = starts_in
-
-    return data
+    ``merge_contiguous`` extends end times across back-to-back slots. It must be
+    True only for the area forecast (#54); the stage ``planned`` list is
+    contiguous by construction and must keep its per-stage boundaries and
+    ``next_*`` fields (default False).
+    """
+    return build_sensor_attrs(
+        forecast,
+        stage,
+        DEFAULT_DATA,
+        datetime.now(UTC),
+        merge_contiguous=merge_contiguous,
+    )
 
 
 def clean(data: dict) -> dict:

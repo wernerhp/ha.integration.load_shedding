@@ -67,6 +67,9 @@ async def test_calendar_multi_stage_events(
 
     entity = hass.data["calendar"].get_entity("calendar.load_shedding_forecast")
     entity.multi_stage_events = True
+    # The event list is cached and only rebuilt on a coordinator update.
+    area_coordinator.async_set_updated_data(area_coordinator.data)
+    await hass.async_block_till_done()
     events = await entity.async_get_events(
         hass,
         datetime(2026, 6, 18, 0, 0, tzinfo=UTC),

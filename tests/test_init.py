@@ -1,7 +1,7 @@
 """Tests for the Load Shedding integration setup, unload and coordinators."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from load_shedding.libs.sepush import SePushError
@@ -12,26 +12,32 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_NAME, CONF_API_KEY, CONF_ID, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.load_shedding import (
     LoadSheddingAreaCoordinator,
     LoadSheddingStageCoordinator,
+    _deserialize_area_data,
+    _deserialize_stage_data,
+    _serialize_area_data,
+    _serialize_stage_data,
     async_migrate_entry,
     utc_dt,
 )
 from custom_components.load_shedding.const import (
+    AREA_UPDATE_INTERVAL,
     ATTR_AREA,
     ATTR_EVENTS,
     ATTR_FORECAST,
     ATTR_PLANNED,
-    ATTR_QUOTA,
     ATTR_SCHEDULE,
     ATTR_STAGE,
     ATTR_START_TIME,
     ATTR_END_TIME,
     CONF_AREAS,
     DOMAIN,
+    STAGE_UPDATE_INTERVAL,
 )
 
 from .conftest import (
@@ -39,6 +45,7 @@ from .conftest import (
     FROZEN_TIME,
     LEGACY_AREA_ID,
     LEGACY_AREA_NAME,
+    STATUS_DATA,
     build_config_entry,
 )
 
@@ -53,7 +60,7 @@ async def test_setup_and_unload(
     assert entry.state is ConfigEntryState.LOADED
     assert DOMAIN in hass.data
     coordinators = hass.data[DOMAIN][entry.entry_id]
-    assert set(coordinators) == {ATTR_STAGE, ATTR_AREA, ATTR_QUOTA}
+    assert set(coordinators) == {ATTR_STAGE, ATTR_AREA}
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -121,6 +128,102 @@ async def test_valid_area_clears_stale_repair_issue(
         )
         is None
     )
+
+
+@pytest.mark.parametrize("status_code", [400, 403, 429])
+async def test_sepush_failure_creates_repair_issue(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+    status_code: int,
+) -> None:
+    """An auth/quota SePush failure on the stage poll raises a repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("api error", status_code=status_code)
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"sepush_api_failure_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.ERROR
+
+
+@pytest.mark.parametrize("status_code", [500, 502, 503, 504])
+async def test_sepush_transient_failure_creates_repair_issue(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+    status_code: int,
+) -> None:
+    """A temporary server-side SePush failure raises a warning repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("server error", status_code=status_code)
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"sepush_api_failure_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.translation_key == "sepush_api_unavailable"
+
+
+async def test_sepush_unexpected_error_creates_repair_issue(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """An unexpected (non-SePush) stage error is surfaced as a repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = ValueError("boom")
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"sepush_api_failure_{entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.translation_key == "sepush_api_unavailable"
+
+
+async def test_sepush_failure_issue_cleared_on_recovery(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A successful stage poll clears a previously raised SePush repair issue."""
+    freezer.move_to(FROZEN_TIME)
+    mock_sepush.status.side_effect = SePushError("quota exceeded", status_code=429)
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    issue_registry = ir.async_get(hass)
+    issue_id = f"sepush_api_failure_{entry.entry_id}"
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    mock_sepush.status.side_effect = None
+    mock_sepush.status.return_value = STATUS_DATA
+    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_STAGE]
+    freezer.tick(timedelta(seconds=STAGE_UPDATE_INTERVAL + 1))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
 
 
 async def test_stage_coordinator_data(
@@ -194,18 +297,19 @@ async def test_area_coordinator_cached_within_interval(
     coordinator.sepush.area.assert_not_called()
 
 
-async def test_area_coordinator_handles_api_error(
+async def test_area_coordinator_preserves_data_on_api_error(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """The area coordinator clears data on a non-area API error."""
+    """A transient area API error keeps the previously-fetched schedule."""
     entry = init_integration
     coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
         ATTR_AREA
     ]
+    assert AREA_ID in coordinator.data
     coordinator.last_update = None
     coordinator.sepush.area.side_effect = SePushError("boom", status_code=500)
     result = await coordinator._async_update_data()
-    assert result == {}
+    assert AREA_ID in result
 
 
 async def test_area_forecast_from_planned_schedule(
@@ -260,38 +364,85 @@ async def test_area_forecast_from_planned_schedule(
     assert forecast[0][ATTR_END_TIME] == slot_end
 
 
-async def test_quota_coordinator_data(
+@pytest.mark.parametrize(
+    "note",
+    [
+        pytest.param("Loadshedding", id="single_word"),
+        pytest.param("", id="empty"),
+        pytest.param(None, id="missing"),
+    ],
+)
+async def test_area_update_handles_malformed_event_note(
+    hass: HomeAssistant, init_integration: MockConfigEntry, note: str | None
+) -> None:
+    """A malformed event note does not crash the area update."""
+    entry = init_integration
+    coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_AREA
+    ]
+    coordinator.sepush.area.return_value = {
+        "events": [
+            {
+                "note": note,
+                "start": "2026-06-18T20:00:00+02:00",
+                "end": "2026-06-18T22:30:00+02:00",
+            }
+        ],
+        "schedule": {"days": []},
+    }
+
+    result = await coordinator.async_update_area()
+
+    assert result[AREA_ID][ATTR_EVENTS][0][ATTR_STAGE] is Stage.NO_LOAD_SHEDDING
+
+
+async def test_stage_update_skips_malformed_zone(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """The quota coordinator exposes the SePush allowance."""
+    """A malformed status entry is skipped without dropping the valid zones."""
     entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    assert coordinator.data["count"] == 5
-    assert coordinator.data["limit"] == 50
+    coordinator: LoadSheddingStageCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_STAGE
+    ]
+    coordinator.sepush.status.return_value = {
+        "status": {
+            "eskom": {
+                "name": "National",
+                "stage": "2",
+                "stage_updated": None,
+                "next_stages": [],
+            },
+            "capetown": {
+                "name": "Cape Town",
+                "stage": "1",
+                "stage_updated": "2026-06-18T09:00:00+02:00",
+                "next_stages": [],
+            },
+        }
+    }
+
+    result = await coordinator.async_update_stage()
+
+    assert "eskom" not in result
+    assert "capetown" in result
 
 
-async def test_quota_coordinator_handles_api_error(
+async def test_area_update_skips_malformed_schedule(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """The quota coordinator clears data on an API error."""
+    """A malformed area schedule is skipped without crashing the update."""
     entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    coordinator.sepush.check_allowance.side_effect = SePushError(
-        "boom", status_code=500
-    )
-    result = await coordinator._async_update_data()
-    assert result == {}
+    coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_AREA
+    ]
+    coordinator.sepush.area.return_value = {
+        "events": [],
+        "schedule": {"days": [{"date": "not-a-date", "stages": []}]},
+    }
 
+    result = await coordinator.async_update_area()
 
-async def test_quota_coordinator_handles_update_failed(
-    hass: HomeAssistant, init_integration: MockConfigEntry
-) -> None:
-    """The quota coordinator keeps prior data on an unexpected update failure."""
-    entry = init_integration
-    coordinator = hass.data[DOMAIN][entry.entry_id][ATTR_QUOTA]
-    coordinator.sepush.check_allowance.side_effect = UpdateFailed("boom")
-    result = await coordinator._async_update_data()
-    assert result == coordinator.data
+    assert AREA_ID not in result
 
 
 def test_utc_dt() -> None:
@@ -300,6 +451,269 @@ def test_utc_dt() -> None:
     time = datetime(1900, 1, 1, 20, 0)
     result = utc_dt(date, time)
     assert result == datetime(2026, 6, 18, 18, 0, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------------------
+# Cache serialisation round-trip tests (#116)
+# ---------------------------------------------------------------------------
+
+
+def test_stage_cache_round_trip() -> None:
+    """Stage coordinator data serialises to JSON and back without data loss."""
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+    data = {
+        "eskom": {
+            "name": "National",
+            ATTR_PLANNED: [
+                {
+                    ATTR_STAGE: Stage.STAGE_2,
+                    ATTR_START_TIME: now,
+                    ATTR_END_TIME: now + timedelta(hours=2),
+                },
+            ],
+        },
+    }
+    assert _deserialize_stage_data(_serialize_stage_data(data)) == data
+
+
+def test_area_cache_round_trip() -> None:
+    """Area coordinator data serialises to JSON and back without data loss."""
+    now = datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
+    data = {
+        "za_gt_tsh_garsfontein_gaev": {
+            ATTR_EVENTS: [
+                {
+                    ATTR_STAGE: Stage.STAGE_2,
+                    ATTR_START_TIME: now,
+                    ATTR_END_TIME: now + timedelta(hours=2),
+                },
+            ],
+            ATTR_SCHEDULE: {
+                Stage.STAGE_2: [
+                    {
+                        ATTR_STAGE: Stage.STAGE_2,
+                        ATTR_START_TIME: now,
+                        ATTR_END_TIME: now + timedelta(hours=2),
+                    },
+                ],
+            },
+        },
+    }
+    assert _deserialize_area_data(_serialize_area_data(data)) == data
+
+
+async def test_stage_coordinator_cache_skips_api_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage coordinator does not call the API when a fresh cache is loaded on restart.
+
+    Simulates the scenario described in issue #116: the cache is pre-seeded with
+    a last_update that is still within STAGE_UPDATE_INTERVAL, so the first
+    refresh must return the cached data without hitting SePush.
+    """
+    freezer.move_to(FROZEN_TIME)
+    frozen_now = datetime.fromisoformat(FROZEN_TIME)
+    # last_update must be strictly before now so diff > 0; when diff == 0
+    # should_refresh() returns True (see helpers.should_refresh docstring).
+    cache_time = frozen_now - timedelta(seconds=1)
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+
+    # Pre-populate the coordinator's store so async_load_cache restores it.
+    store_data = {
+        "last_update": cache_time.isoformat(),
+        "data": _serialize_stage_data(
+            {
+                "eskom": {
+                    "name": "National",
+                    ATTR_PLANNED: [
+                        {
+                            ATTR_STAGE: Stage.STAGE_2,
+                            ATTR_START_TIME: frozen_now - timedelta(hours=1),
+                            ATTR_END_TIME: frozen_now + timedelta(hours=1),
+                        }
+                    ],
+                }
+            }
+        ),
+    }
+
+    async def _fake_load():
+        return store_data
+
+    with patch.object(Store, "async_load", side_effect=_fake_load):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The API should not have been called for stage — cache was fresh.
+    mock_sepush.status.assert_not_called()
+
+
+async def test_stage_coordinator_reseeds_rate_limit_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The persisted rate-limit snapshot reseeds sepush._rate_limit on restart.
+
+    On the #116 restart path the status() poll is skipped, so without reseeding
+    the SePush cache would be empty. The cached snapshot must be written back to
+    sepush._rate_limit so the quota sensor reads it without a blocking refresh.
+    """
+    freezer.move_to(FROZEN_TIME)
+    frozen_now = datetime.fromisoformat(FROZEN_TIME)
+    cache_time = frozen_now - timedelta(seconds=1)
+    persisted_rate_limit = {
+        "used": 9,
+        "limit": 50,
+        "remaining": 41,
+        "reset": "2026-06-19T00:00:00+00:00",
+    }
+    # Empty the live cache so only a successful reseed can repopulate it.
+    mock_sepush._rate_limit = {}
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+
+    store_data = {
+        "last_update": cache_time.isoformat(),
+        "data": _serialize_stage_data(
+            {
+                "eskom": {
+                    "name": "National",
+                    ATTR_PLANNED: [
+                        {
+                            ATTR_STAGE: Stage.STAGE_2,
+                            ATTR_START_TIME: frozen_now - timedelta(hours=1),
+                            ATTR_END_TIME: frozen_now + timedelta(hours=1),
+                        }
+                    ],
+                }
+            }
+        ),
+        "rate_limit": persisted_rate_limit,
+    }
+
+    async def _fake_load():
+        return store_data
+
+    with patch.object(Store, "async_load", side_effect=_fake_load):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The skipped poll left the live cache untouched, so the persisted snapshot
+    # must have reseeded it without any rate_limit() refresh call.
+    assert mock_sepush._rate_limit == persisted_rate_limit
+    state = hass.states.get("sensor.load_shedding_sepush_api_quota")
+    assert state is not None
+    assert state.state == "9"
+
+
+async def test_area_coordinator_cache_skips_api_on_restart(
+    hass: HomeAssistant,
+    mock_sepush: MagicMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Area coordinator does not call the API when a fresh cache is loaded on restart.
+
+    Simulates the scenario described in issue #116: the area schedule is valid
+    for 24 h so it must never be re-fetched on a restart that occurs within that
+    window.
+    """
+    freezer.move_to(FROZEN_TIME)
+    frozen_now = datetime.fromisoformat(FROZEN_TIME)
+    # last_update must be strictly before now so diff > 0; when diff == 0
+    # should_refresh() returns True (see helpers.should_refresh docstring).
+    cache_time = frozen_now - timedelta(seconds=1)
+
+    entry = build_config_entry()
+    entry.add_to_hass(hass)
+
+    area_store_data = {
+        "last_update": cache_time.isoformat(),
+        "data": _serialize_area_data(
+            {
+                AREA_ID: {
+                    ATTR_EVENTS: [],
+                    ATTR_SCHEDULE: {
+                        Stage.STAGE_2: [
+                            {
+                                ATTR_STAGE: Stage.STAGE_2,
+                                ATTR_START_TIME: frozen_now + timedelta(hours=12),
+                                ATTR_END_TIME: frozen_now + timedelta(hours=14),
+                            }
+                        ]
+                    },
+                }
+            }
+        ),
+    }
+
+    async def _fake_load():
+        return area_store_data
+
+    with patch.object(Store, "async_load", side_effect=_fake_load):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Area API must not have been called — cache was fresh.
+    mock_sepush.area.assert_not_called()
+
+
+async def test_stage_coordinator_saves_cache_after_successful_poll(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Stage coordinator persists data after a successful API poll."""
+    entry = init_integration
+    coordinator: LoadSheddingStageCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_STAGE
+    ]
+    saved: list[dict] = []
+
+    async def _capture(data):
+        saved.append(data)
+
+    coordinator._store.async_save = _capture  # type: ignore[method-assign]
+
+    coordinator.last_update = None  # Force a refresh on next call.
+    freezer.tick(timedelta(seconds=STAGE_UPDATE_INTERVAL + 1))
+    await coordinator._async_update_data()
+
+    assert saved, "Store.async_save was never called after a successful API poll"
+    assert "last_update" in saved[0]
+    assert "data" in saved[0]
+    assert "rate_limit" in saved[0]
+
+
+async def test_area_coordinator_saves_cache_after_successful_poll(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Area coordinator persists data after a successful API poll."""
+    entry = init_integration
+    coordinator: LoadSheddingAreaCoordinator = hass.data[DOMAIN][entry.entry_id][
+        ATTR_AREA
+    ]
+    saved: list[dict] = []
+
+    async def _capture(data):
+        saved.append(data)
+
+    coordinator._store.async_save = _capture  # type: ignore[method-assign]
+
+    coordinator.last_update = None  # Force a refresh on next call.
+    freezer.tick(timedelta(seconds=AREA_UPDATE_INTERVAL + 1))
+    await coordinator._async_update_data()
+
+    assert saved, "Store.async_save was never called after a successful API poll"
+    assert "last_update" in saved[0]
+    assert "data" in saved[0]
 
 
 @pytest.mark.parametrize(

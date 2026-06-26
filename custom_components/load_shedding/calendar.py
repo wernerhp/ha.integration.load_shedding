@@ -1,7 +1,7 @@
 """Support for the LoadShedding service."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from homeassistant.components.calendar import (
     DOMAIN as CALENDAR_DOMAIN,
@@ -15,12 +15,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import LoadSheddingDevice
+from .helpers import build_calendar_events, current_event, events_in_range
 from .const import (
     ATTR_AREA,
-    ATTR_END_TIME,
     ATTR_FORECAST,
-    ATTR_STAGE,
-    ATTR_START_TIME,
     CONF_MULTI_STAGE_EVENTS,
     DOMAIN,
     NAME,
@@ -59,9 +57,11 @@ class LoadSheddingForecastCalendar(
         self._attr_unique_id = (
             f"{self.coordinator.config_entry.entry_id}_calendar_forecast"
         )
-        self._event: CalendarEvent | None = None
         self.entity_id = f"{CALENDAR_DOMAIN}.{DOMAIN}_forecast"
         self.multi_stage_events = multi_stage_events
+        # Cache of built event dicts; rebuilt only when coordinator data
+        # changes rather than on every property/read access (review L5).
+        self._event_dicts: list[dict] | None = None
 
     @property
     def name(self) -> str | None:
@@ -70,8 +70,48 @@ class LoadSheddingForecastCalendar(
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Return the next upcoming event."""
-        return self._event
+        """Return the current or next upcoming event, or None.
+
+        Computed from the cached coordinator data so that the calendar reliably
+        clears when load shedding ends (the forecast becomes empty) instead of
+        holding on to a stale event.
+        """
+        now = datetime.now(UTC)
+        event = current_event(self._get_event_dicts(), now)
+        return self._to_calendar_event(event) if event else None
+
+    def _get_event_dicts(self) -> list[dict]:
+        """Return the cached event dicts, building them on first use.
+
+        The event list depends only on the coordinator data (not on the current
+        time), so it is cached and invalidated in ``_handle_coordinator_update``.
+        """
+        if self._event_dicts is None:
+            self._event_dicts = self._build_event_dicts()
+        return self._event_dicts
+
+    def _build_event_dicts(self) -> list[dict]:
+        """Build the ordered list of forecast events as plain dicts."""
+        area_forecasts = [
+            {
+                "id": area.id,
+                "name": area.name,
+                ATTR_FORECAST: self.data.get(area.id, {}).get(ATTR_FORECAST),
+            }
+            for area in self.coordinator.areas
+        ]
+        return build_calendar_events(area_forecasts, self.multi_stage_events)
+
+    @staticmethod
+    def _to_calendar_event(event: dict) -> CalendarEvent:
+        """Wrap a plain event dict into a HA CalendarEvent."""
+        return CalendarEvent(
+            start=event["start"],
+            end=event["end"],
+            summary=event["summary"],
+            location=event["location"],
+            description=f"{NAME}",
+        )
 
     async def async_get_events(
         self,
@@ -80,51 +120,16 @@ class LoadSheddingForecastCalendar(
         end_date: datetime,
     ) -> list[CalendarEvent]:
         """Return calendar events within a datetime range."""
-        events = []
-
-        for area in self.coordinator.areas:
-            area_forecast = self.data.get(area.id, {}).get(ATTR_FORECAST)
-            if area_forecast:
-                for forecast in area_forecast:
-                    forecast_stage = str(forecast.get(ATTR_STAGE))
-                    forecast_start_time = forecast.get(ATTR_START_TIME)
-                    forecast_end_time = forecast.get(ATTR_END_TIME)
-
-                    if forecast_start_time <= start_date >= forecast_end_time:
-                        continue
-                    if forecast_start_time >= end_date <= forecast_end_time:
-                        continue
-
-                    event: CalendarEvent = CalendarEvent(
-                        start=forecast_start_time,
-                        end=forecast_end_time,
-                        summary=forecast_stage,
-                        location=area.name,
-                        description=f"{NAME}",
-                    )
-                    events.append(event)
-
-                if not self.multi_stage_events:
-                    continue
-
-                # Multi-stage events
-                for i, cur in enumerate(events):
-                    if i + 1 >= len(events):
-                        continue
-                    nxt = events[i + 1]
-                    if cur.end == nxt.start:
-                        cur.summary = f"{cur.summary}/{nxt.summary}"
-                        cur.end = nxt.end
-                        del events[i + 1]
-
-        if events:
-            self._event = events[0]
-
-        return events
+        events = events_in_range(self._get_event_dicts(), start_date, end_date)
+        return [self._to_calendar_event(event) for event in events]
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if data := self.coordinator.data:
             self.data = data
-            self.async_write_ha_state()
+        # Rebuild the cached event list now that the data changed; writing state
+        # re-reads the live ``event`` property so the calendar reflects (or
+        # clears) the current event.
+        self._event_dicts = self._build_event_dicts()
+        self.async_write_ha_state()
