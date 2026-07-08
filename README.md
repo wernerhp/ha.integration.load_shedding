@@ -1,5 +1,7 @@
 # Load Shedding [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 
+[![Active installations](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=active%20installations&cacheSeconds=15600&url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.load_shedding.total)](https://analytics.home-assistant.io/) [![HACS rank](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwernerhp%2Fha.integration.load_shedding%2Fbadges%2Frank.json&cacheSeconds=3600)](https://github.com/wernerhp/ha.integration.load_shedding/blob/badges/rank.json)
+
 A Home Assistant integration to track your load schedding schedule.
 
 <img src="img/preview.png" width="auto" height="auto"/>
