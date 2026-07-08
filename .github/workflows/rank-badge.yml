@@ -1,0 +1,55 @@
+name: Update HACS rank badge
+
+# Recomputes this integration's rank among HACS-listed integrations by
+# active installations (HA opt-in analytics) and publishes a shields.io
+# endpoint JSON to the orphan `badges` branch.
+# NOTE: GitHub auto-disables scheduled workflows after 60 days of repo
+# inactivity; re-enable from the Actions tab if the badge goes stale.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute rank
+        run: |
+          python3 - <<'EOF'
+          import json, urllib.request
+
+          def fetch(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "rank-badge-action"})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+
+          cust = fetch('https://analytics.home-assistant.io/custom_integrations.json')
+          hacs = fetch('https://data-v2.hacs.xyz/integration/data.json')
+          domains = {v.get('domain') for v in hacs.values() if v.get('domain')}
+          cohort = {d: cust[d]['total'] for d in cust if d in domains}
+          me = cohort['load_shedding']  # KeyError -> job fails -> badge keeps last good value
+          rank = 1 + sum(1 for v in cohort.values() if v > me)
+          n = len(cohort)
+          json.dump({
+              'schemaVersion': 1,
+              'label': 'HACS rank',
+              'message': f'#{rank} of {n} by active installs',
+              'color': '41BDF5',
+          }, open('rank.json', 'w'))
+          print(f'load_shedding: {me} installs, rank {rank}/{n}')
+          EOF
+      - name: Publish to badges branch
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git init -b badges out
+          mv rank.json out/
+          cd out
+          git add rank.json
+          git commit -m "Update rank badge $(date -u +%F)"
+          git push --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" badges
